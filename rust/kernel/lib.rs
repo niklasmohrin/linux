@@ -44,9 +44,12 @@ pub mod bindings;
 pub mod buffer;
 pub mod c_types;
 pub mod chrdev;
+pub mod dentry;
+#[macro_use]
 mod error;
 pub mod file;
 pub mod file_operations;
+pub mod fs;
 pub mod miscdev;
 pub mod pages;
 pub mod str;
@@ -70,6 +73,8 @@ pub mod sysctl;
 
 pub mod io_buffer;
 pub mod iov_iter;
+#[macro_use]
+mod macros;
 pub mod of;
 pub mod platdev;
 mod types;
