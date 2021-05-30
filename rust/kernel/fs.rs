@@ -1,8 +1,11 @@
 use alloc::boxed::Box;
-use core::{convert::TryFrom, mem, ptr};
+use core::ptr;
 
 use crate::ret_err_ptr;
-use crate::{bindings, buffer::Buffer, c_types::*, prelude::*, str::CStr, Error, Result};
+use crate::{
+    bindings, buffer::Buffer, c_types::*, error::from_kernel_err_ptr, prelude::*, str::CStr, Error,
+    Result,
+};
 
 pub type FileSystemType = bindings::file_system_type;
 pub type SuperBlock = bindings::super_block;
@@ -143,7 +146,7 @@ pub trait FileSystem: FileSystemBase + DeclaredFileSystemType {
         flags: c_int,
         data: Option<&mut Self::MountOptions>,
     ) -> Result<*mut bindings::dentry> {
-        Error::parse_ptr(unsafe {
+        from_kernel_err_ptr(unsafe {
             bindings::mount_nodev(
                 Self::file_system_type(),
                 flags,

@@ -11,10 +11,6 @@ use core::fmt;
 use core::num::TryFromIntError;
 use core::str::{self, Utf8Error};
 
-extern "C" {
-    fn rust_helper_is_err(p: *mut c_types::c_void) -> bool;
-}
-
 /// Generic integer kernel error.
 ///
 /// The kernel defines a set of integer generic error codes based on C and
@@ -62,24 +58,8 @@ impl Error {
         self.0
     }
 
-    pub fn is_err_ptr(p: *mut c_types::c_void) -> bool {
-        unsafe { rust_helper_is_err(p) }
-    }
-
     pub fn as_err_ptr<T>(&self) -> *mut T {
         self.0 as *mut _
-    }
-
-    pub fn from_err_ptr(p: *mut c_types::c_void) -> Self {
-        Self(p as _)
-    }
-
-    pub fn parse_ptr<T>(p: *mut T) -> Result<*mut T> {
-        if !Self::is_err_ptr(p as _) {
-            Ok(p)
-        } else {
-            Err(Self::from_err_ptr(p as _))
-        }
     }
 }
 
