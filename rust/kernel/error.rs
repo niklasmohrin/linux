@@ -74,7 +74,7 @@ impl Error {
         Self(p as _)
     }
 
-    pub fn parse_ptr<T>(p: *mut T) -> KernelResult<*mut T> {
+    pub fn parse_ptr<T>(p: *mut T) -> Result<*mut T> {
         if !Self::is_err_ptr(p as _) {
             Ok(p)
         } else {

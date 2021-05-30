@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use core::{convert::TryFrom, mem, ptr};
 
 use crate::ret_err_ptr;
-use crate::{bindings, buffer::Buffer, c_types::*, prelude::*, CStr, Error, KernelResult};
+use crate::{bindings, buffer::Buffer, c_types::*, prelude::*, str::CStr, Error, Result};
 
 pub type FileSystemType = bindings::file_system_type;
 pub type SuperBlock = bindings::super_block;
@@ -10,7 +10,7 @@ pub type SuperBlock = bindings::super_block;
 pub trait FileSystemBase {
     type MountOptions = c_void;
 
-    const NAME: CStr<'static>;
+    const NAME: &'static CStr;
     const FS_FLAGS: c_int;
     const OWNER: *mut bindings::module;
 
@@ -18,9 +18,9 @@ pub trait FileSystemBase {
     fn mount(
         fs_type: &'_ mut FileSystemType,
         flags: c_int,
-        device_name: CStr,
+        device_name: &CStr,
         data: Option<&mut Self::MountOptions>,
-    ) -> KernelResult<*mut bindings::dentry>;
+    ) -> Result<*mut bindings::dentry>;
 
     // fn kill_superblock(sb: &mut SuperBlock);
 
@@ -34,7 +34,7 @@ pub trait FileSystemBase {
     ) -> *mut bindings::dentry {
         pr_emerg!("in mount_raw");
         let fs_type = &mut *fs_type;
-        let device_name = CStr::from_ptr(device_name);
+        let device_name = CStr::from_char_ptr(device_name);
         let data = (data as *mut Self::MountOptions).as_mut();
         ret_err_ptr!(Self::mount(fs_type, flags, device_name, data))
     }
@@ -78,7 +78,7 @@ pub trait FileSystemBase {
         _sb: &mut SuperBlock,
         _data: Option<&mut Self::MountOptions>,
         _silent: c_int,
-    ) -> KernelResult {
+    ) -> Result {
         pr_emerg!("Using default FileSystem::fill_super");
         Ok(())
     }
@@ -105,7 +105,7 @@ pub trait DeclaredFileSystemType: FileSystemBase {
 macro_rules! declare_fs_type {
     ($T:ty, $S:ident) => {
         static mut $S: $crate::bindings::file_system_type = $crate::bindings::file_system_type {
-            name: <$T as $crate::fs::FileSystemBase>::NAME.as_str() as *const _ as *const _,
+            name: <$T as $crate::fs::FileSystemBase>::NAME.as_char_ptr() as *const _,
             fs_flags: <$T as $crate::fs::FileSystemBase>::FS_FLAGS,
             mount: Some(<$T as $crate::fs::FileSystemBase>::mount_raw),
             kill_sb: Some(<$T as $crate::fs::FileSystemBase>::kill_sb_raw),
@@ -121,7 +121,7 @@ macro_rules! declare_fs_type {
 }
 
 pub trait FileSystem: FileSystemBase + DeclaredFileSystemType {
-    fn register() -> KernelResult {
+    fn register() -> Result {
         let err = unsafe { bindings::register_filesystem(Self::file_system_type()) };
         if err == 0 {
             Ok(())
@@ -130,7 +130,7 @@ pub trait FileSystem: FileSystemBase + DeclaredFileSystemType {
         }
     }
 
-    fn unregister() -> KernelResult {
+    fn unregister() -> Result {
         let err = unsafe { bindings::unregister_filesystem(Self::file_system_type()) };
         if err == 0 {
             Ok(())
@@ -142,7 +142,7 @@ pub trait FileSystem: FileSystemBase + DeclaredFileSystemType {
     fn mount_nodev(
         flags: c_int,
         data: Option<&mut Self::MountOptions>,
-    ) -> KernelResult<*mut bindings::dentry> {
+    ) -> Result<*mut bindings::dentry> {
         Error::parse_ptr(unsafe {
             bindings::mount_nodev(
                 Self::file_system_type(),

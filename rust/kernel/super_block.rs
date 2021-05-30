@@ -11,7 +11,7 @@ pub trait SuperBlock {
     pub fn from_inner(sb: &mut bindings::super_block) -> &mut Self;
 
     const statfs_implemented: bool = false; // TODO add a derive macro to auto-generate these
-    pub fn statfs(&mut self, dentry: Box<Dentry>, buf: Box<KStatfs>) -> KernelResult<()> {
+    pub fn statfs(&mut self, dentry: Box<Dentry>, buf: Box<KStatfs>) -> Result<()> {
         unreachable!()
     }
     
@@ -25,7 +25,7 @@ pub trait SuperBlock {
     }
 
     const drop_inode_implemented: bool = false;
-    pub fn drop_inode(inode: Box<Inode>) -> KernelResult {
+    pub fn drop_inode(inode: Box<Inode>) -> Result {
         unreachable!()
     }
 

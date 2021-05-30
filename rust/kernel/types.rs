@@ -26,7 +26,7 @@ pub struct Mode(bindings::umode_t);
 
 impl Mode {
     /// Creates a [`Mode`] from an integer.
-    pub fn from_int(m: u16) -> Mode {
+    pub const fn from_int(m: u16) -> Mode {
         Mode(m)
     }
 

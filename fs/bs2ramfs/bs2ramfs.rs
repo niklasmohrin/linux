@@ -5,8 +5,7 @@ use alloc::boxed::Box;
 use core::{mem, ptr};
 
 use kernel::{
-    bindings, c_types::*, declare_fs_type, file::File, file_operations::PointerWrapper, prelude::*,
-    CStr, Error, Mode,
+    bindings, c_types::*, declare_fs_type, file::File, prelude::*, str::CStr, Error, Mode,
 };
 
 // should be renamed at some point
@@ -43,16 +42,16 @@ module! {
 struct BS2Ramfs;
 
 impl FileSystemBase for BS2Ramfs {
-    const NAME: CStr<'static> = kernel::cstr!("bs2ramfs_name");
+    const NAME: &'static CStr = kernel::c_str!("bs2ramfs_name");
     const FS_FLAGS: c_int = bindings::FS_USERNS_MOUNT as _;
     const OWNER: *mut bindings::module = ptr::null_mut();
 
     fn mount(
         fs_type: &'_ mut FileSystemType,
         flags: c_int,
-        device_name: CStr,
+        device_name: &CStr,
         data: Option<&mut Self::MountOptions>,
-    ) -> KernelResult<*mut bindings::dentry> {
+    ) -> Result<*mut bindings::dentry> {
         Self::mount_nodev(flags, data)
     }
 
@@ -68,14 +67,14 @@ impl FileSystemBase for BS2Ramfs {
         sb: &mut SuperBlock,
         data: Option<&mut Self::MountOptions>,
         silent: c_int,
-    ) -> KernelResult {
+    ) -> Result {
         unsafe { ramfs_fill_super_impl(sb, data, silent) }
     }
 }
 kernel::declare_fs_type!(BS2Ramfs, BS2RAMFS_FS_TYPE);
 
 impl KernelModule for BS2Ramfs {
-    fn init() -> KernelResult<Self> {
+    fn init() -> Result<Self> {
         pr_emerg!("bs2 ramfs in action");
         Self::register().map(move |_| Self)
     }
@@ -320,7 +319,7 @@ unsafe fn ramfs_fill_super_impl(
     sb: *mut bindings::super_block,
     _data: Option<&mut <BS2Ramfs as FileSystemBase>::MountOptions>,
     silent: c_int,
-) -> KernelResult {
+) -> Result {
     pr_emerg!("Reached ramfs_fill_super_impl");
     let mut sb = &mut *sb;
     sb.s_fs_info = ptr::null_mut();
