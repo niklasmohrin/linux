@@ -1,11 +1,12 @@
-use alloc::boxed::Box;
-use core::{
-    mem,
-    ops::{Deref, DerefMut},
-};
+use core::mem;
+use core::ops::{Deref, DerefMut};
 
 use crate::bindings;
 pub type Inode = bindings::inode;
+
+extern "C" {
+    fn rust_helper_dget(dentry: *mut bindings::dentry);
+}
 
 #[repr(transparent)]
 pub struct Dentry(bindings::dentry);
@@ -22,60 +23,63 @@ impl DerefMut for Dentry {
         &mut self.0
     }
 }
+impl AsRef<Dentry> for bindings::dentry {
+    fn as_ref(&self) -> &Dentry {
+        unsafe { mem::transmute(self) }
+    }
+}
+impl AsMut<Dentry> for bindings::dentry {
+    fn as_mut(&mut self) -> &mut Dentry {
+        unsafe { mem::transmute(self) }
+    }
+}
 
 impl Dentry {
-    pub fn as_raw_inner(self: Box<Self>) -> *mut bindings::dentry {
-        Box::into_raw(self) as *mut _
+    pub fn as_ptr_mut(&mut self) -> *mut bindings::dentry {
+        self.deref_mut() as *mut _
     }
 
     pub fn make_root(inode: &mut Inode) -> Option<&mut Self> {
-        unsafe {
-            Some(bindings::d_make_root(inode as *mut _))
-                .filter(|p| !p.is_null())
-                .map(|p| mem::transmute(&mut *p))
-        }
+        unsafe { (bindings::d_make_root(inode as *mut _) as *mut Self).as_mut() }
     }
 
     pub fn lookup(&mut self, query: *const bindings::qstr) -> Option<&mut Self> {
-        unsafe {
-            Some(bindings::d_lookup(&mut self.0 as *mut _, query))
-                .filter(|p| !p.is_null())
-                .map(|p| mem::transmute(&mut *p))
-        }
+        unsafe { (bindings::d_lookup(self.as_ptr_mut(), query) as *mut Self).as_mut() }
     }
 
     pub fn get(&mut self) {
-        // couldn't find in bindings, lol
-        unimplemented!()
+        // Note: while the original `dget` function also allows NULL as an argument, it doesn't do
+        // anything with it, so only wrapping the function for non-null pointers should be okay.
+        unsafe { rust_helper_dget(self.as_ptr_mut()) };
     }
 
     pub fn put(&mut self) {
         unsafe {
-            bindings::dput(&mut self.0 as *mut _);
+            bindings::dput(self.as_ptr_mut());
         }
     }
 
     pub fn drop_dentry(&mut self) {
         unsafe {
-            bindings::d_drop(&mut self.0 as *mut _);
+            bindings::d_drop(self.as_ptr_mut());
         }
     }
 
     pub fn delete_dentry(&mut self) {
         unsafe {
-            bindings::d_delete(&mut self.0 as *mut _);
+            bindings::d_delete(self.as_ptr_mut());
         }
     }
 
     pub fn add(&mut self, inode: &mut Inode) {
         unsafe {
-            bindings::d_add(&mut self.0 as *mut _, inode as *mut _);
+            bindings::d_add(self.as_ptr_mut(), inode as *mut _);
         }
     }
 
     pub fn instantiate(&mut self, inode: &mut Inode) {
         unsafe {
-            bindings::d_instantiate(&mut self.0 as *mut _, inode as *mut _);
+            bindings::d_instantiate(self.as_ptr_mut(), inode as *mut _);
         }
     }
 }
