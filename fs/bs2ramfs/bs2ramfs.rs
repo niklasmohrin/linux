@@ -4,15 +4,12 @@
 use alloc::boxed::Box;
 use core::{mem, ptr};
 
-use kernel::{
-    bindings, c_types::*, declare_fs_type, file::File, prelude::*, str::CStr, Error, Mode,
-};
+use kernel::{bindings, c_types::*, dentry::Dentry, prelude::*, str::CStr, Error, Mode};
 
 // should be renamed at some point
 use kernel::fs::{
-    DeclaredFileSystemType, FileSystem, FileSystemBase, FileSystemType, SuperBlock,
-    DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_FILE_OPERATIONS, DEFAULT_INODE_OPERATIONS,
-    DEFAULT_SUPER_OPS,
+    FileSystem, FileSystemBase, FileSystemType, SuperBlock, DEFAULT_ADDRESS_SPACE_OPERATIONS,
+    DEFAULT_FILE_OPERATIONS, DEFAULT_INODE_OPERATIONS, DEFAULT_SUPER_OPS,
 };
 
 type Inode = bindings::inode;
@@ -22,7 +19,6 @@ const MAX_LFS_FILESIZE: c_longlong = c_longlong::MAX;
 const BS2RAMFS_MAGIC: u64 = 0x858458f6; // ~~one less than~~ ramfs, should not clash with anything (maybe)
 
 extern "C" {
-    fn rust_helper_dget(dentry: *mut bindings::dentry);
     fn rust_helper_mapping_set_unevictable(mapping: *mut bindings::address_space);
     fn rust_helper_mapping_set_gfp_mask(
         mapping: *mut bindings::address_space,
@@ -47,9 +43,9 @@ impl FileSystemBase for BS2Ramfs {
     const OWNER: *mut bindings::module = ptr::null_mut();
 
     fn mount(
-        fs_type: &'_ mut FileSystemType,
+        _fs_type: &'_ mut FileSystemType,
         flags: c_int,
-        device_name: &CStr,
+        _device_name: &CStr,
         data: Option<&mut Self::MountOptions>,
     ) -> Result<*mut bindings::dentry> {
         Self::mount_nodev(flags, data)
@@ -87,22 +83,26 @@ impl Drop for BS2Ramfs {
     }
 }
 
-struct ramfs_mount_opts {
-    mode: bindings::mode_t,
+struct RamfsMountOpts {
+    pub mode: bindings::mode_t,
 }
 
-struct ramfs_fs_info {
-    mount_opts: ramfs_mount_opts,
+impl Default for RamfsMountOpts {
+    fn default() -> Self {
+        Self { mode: 0o775 }
+    }
 }
 
-const RAMFS_DEFAULT_MODE: Mode = Mode::from_int(0o775);
+struct RamfsFsInfo {
+    mount_opts: RamfsMountOpts,
+}
 
 unsafe extern "C" fn ramfs_mmu_get_unmapped_area(
-    file: *mut bindings::file,
-    addr: c_ulong,
-    len: c_ulong,
-    pgoff: c_ulong,
-    flags: c_ulong,
+    _file: *mut bindings::file,
+    _addr: c_ulong,
+    _len: c_ulong,
+    _pgoff: c_ulong,
+    _flags: c_ulong,
 ) -> c_ulong {
     pr_emerg!(
         "AKAHSDkADKHAKHD WE ARE ABOUT TO PANIC (IN MMU_GET_UNMAPPED_AREA;;;; LOOK HERE COME ON"
@@ -111,8 +111,8 @@ unsafe extern "C" fn ramfs_mmu_get_unmapped_area(
 }
 
 unsafe extern "C" fn ramfs_show_options(
-    m: *mut bindings::seq_file,
-    root: *mut bindings::dentry,
+    _m: *mut bindings::seq_file,
+    _root: *mut bindings::dentry,
 ) -> c_int {
     pr_emerg!("ramfs show options, doing nothing");
     0
@@ -130,14 +130,14 @@ const RAMFS_FILE_OPS: bindings::file_operations = bindings::file_operations {
     ..DEFAULT_FILE_OPERATIONS
 };
 
-static ramfs_ops: bindings::super_operations = bindings::super_operations {
+static RAMFS_OPS: bindings::super_operations = bindings::super_operations {
     statfs: Some(bindings::simple_statfs),
     drop_inode: Some(bindings::generic_delete_inode),
     show_options: Some(ramfs_show_options),
     ..DEFAULT_SUPER_OPS
 };
 
-static ramfs_aops: bindings::address_space_operations = bindings::address_space_operations {
+static RAMFS_AOPS: bindings::address_space_operations = bindings::address_space_operations {
     readpage: Some(bindings::simple_readpage),
     write_begin: Some(bindings::simple_write_begin),
     write_end: Some(bindings::simple_write_end),
@@ -147,7 +147,7 @@ static ramfs_aops: bindings::address_space_operations = bindings::address_space_
 
 // impl FileOperations for BS2Ramfs // niklas: I think it's another struct, not BS2Ramfs
 
-static ramfs_file_inode_ops: bindings::inode_operations = bindings::inode_operations {
+static RAMFS_FILE_INODE_OPS: bindings::inode_operations = bindings::inode_operations {
     setattr: Some(bindings::simple_setattr),
     getattr: Some(bindings::simple_getattr),
     ..DEFAULT_INODE_OPERATIONS
@@ -165,7 +165,7 @@ pub unsafe fn ramfs_get_inode(
     if let Some(inode @ &mut _) = inode.as_mut() {
         inode.i_ino = bindings::get_next_ino() as _;
         bindings::inode_init_owner(&mut bindings::init_user_ns as *mut _, inode, dir, mode as _);
-        (*inode.i_mapping).a_ops = &ramfs_aops;
+        (*inode.i_mapping).a_ops = &RAMFS_AOPS;
         rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
         rust_helper_mapping_set_unevictable(inode.i_mapping);
         inode.i_atime = bindings::current_time(inode);
@@ -173,11 +173,11 @@ pub unsafe fn ramfs_get_inode(
         inode.i_ctime = inode.i_atime;
         match mode & Mode::S_IFMT.as_int() as bindings::mode_t {
             bindings::S_IFREG => {
-                inode.i_op = &ramfs_file_inode_ops;
+                inode.i_op = &RAMFS_FILE_INODE_OPS;
                 inode.__bindgen_anon_3.i_fop = &RAMFS_FILE_OPS as *const _ as *mut _;
             }
             bindings::S_IFDIR => {
-                inode.i_op = &ramfs_dir_inode_ops;
+                inode.i_op = &RAMFS_DIR_INODE_OPS;
                 inode.__bindgen_anon_3.i_fop = &bindings::simple_dir_operations;
                 bindings::inc_nlink(inode);
             }
@@ -195,7 +195,7 @@ pub unsafe fn ramfs_get_inode(
 }
 
 unsafe extern "C" fn ramfs_mknod(
-    ns: *mut bindings::user_namespace,
+    _ns: *mut bindings::user_namespace,
     dir: *mut Inode,
     dentry: *mut bindings::dentry,
     mode: bindings::umode_t,
@@ -203,9 +203,13 @@ unsafe extern "C" fn ramfs_mknod(
 ) -> i32 {
     let inode = ramfs_get_inode((*dir).i_sb, dir, mode as _, dev);
 
-    if !inode.is_null() {
-        bindings::d_instantiate(dentry, inode);
-        rust_helper_dget(dentry);
+    if let Some(inode) = inode.as_mut() {
+        let dentry = dentry
+            .as_mut()
+            .expect("Called ramfs_mknod with NULL dentry")
+            .as_mut();
+        dentry.instantiate(inode);
+        dentry.get();
         (*dir).i_ctime = bindings::current_time(dir);
         (*dir).i_mtime = (*dir).i_ctime;
         0
@@ -238,7 +242,7 @@ unsafe extern "C" fn ramfs_create(
     dir: *mut Inode,
     dentry: *mut bindings::dentry,
     mode: bindings::umode_t,
-    excl: bool,
+    _excl: bool,
 ) -> i32 {
     ramfs_mknod(
         ns,
@@ -251,7 +255,7 @@ unsafe extern "C" fn ramfs_create(
 
 #[no_mangle]
 unsafe extern "C" fn ramfs_symlink(
-    ns: *mut bindings::user_namespace,
+    _ns: *mut bindings::user_namespace,
     dir: *mut Inode,
     dentry: *mut bindings::dentry,
     symname: *const c_char,
@@ -263,32 +267,33 @@ unsafe extern "C" fn ramfs_symlink(
         (Mode::S_IFLNK | Mode::S_IRWXUGO).as_int() as _,
         0,
     );
-    pr_info!("got inode {:?}", inode);
-
-    if inode.is_null() {
-        return Error::ENOSPC.to_kernel_errno();
-    }
-
-    let l = bindings::strlen(symname) + 1;
-    pr_info!("str has len {:?}", l);
-    let ret = bindings::page_symlink(inode, symname, l as _);
-    if ret == 0 {
-        pr_info!("page_symlink is ok");
-        bindings::d_instantiate(dentry, inode);
-        pr_info!("d_instantiate is ok");
-        rust_helper_dget(dentry);
-        pr_info!("dget is ok");
-        (*dir).i_mtime = bindings::current_time(dir);
-        (*dir).i_ctime = (*dir).i_mtime;
-        pr_info!("current_time is ok");
+    pr_info!("got inode ptr {:?}", inode);
+    if let Some(inode) = inode.as_mut() {
+        let l = bindings::strlen(symname) + 1;
+        pr_info!("str has len {:?}", l);
+        let ret = bindings::page_symlink(inode as *mut _, symname, l as _);
+        if ret == 0 {
+            pr_info!("page_symlink is ok");
+            let dentry = dentry
+                .as_mut()
+                .expect("Called ramfs_symlink with NULL dentry")
+                .as_mut();
+            dentry.instantiate(inode);
+            dentry.get();
+            (*dir).i_mtime = bindings::current_time(dir);
+            (*dir).i_ctime = (*dir).i_mtime;
+            pr_info!("current_time is ok");
+        } else {
+            bindings::iput(inode);
+            pr_info!("iput is ok");
+        }
+        ret
     } else {
-        bindings::iput(inode);
-        pr_info!("iput is ok");
+        Error::ENOSPC.to_kernel_errno()
     }
-    ret
 }
 
-static ramfs_dir_inode_ops: bindings::inode_operations = bindings::inode_operations {
+static RAMFS_DIR_INODE_OPS: bindings::inode_operations = bindings::inode_operations {
     create: Some(ramfs_create),
     lookup: Some(bindings::simple_lookup),
     link: Some(bindings::simple_link),
@@ -301,33 +306,19 @@ static ramfs_dir_inode_ops: bindings::inode_operations = bindings::inode_operati
     ..DEFAULT_INODE_OPERATIONS
 };
 
-// #[no_mangle]
-// unsafe extern "C" fn ramfs_fill_super(
-//     sb: *mut bindings::super_block,
-//     data: *mut c_void,
-//     silent: c_int,
-// ) -> i32 {
-//     pr_emerg!("Reached ramfs_fill_super (not_impl)");
-//     match ramfs_fill_super_impl(sb, data, silent) {
-//         Ok(_) => 0,
-//         Err(e) => e.to_kernel_errno(),
-//     }
-// }
-
 #[no_mangle]
 unsafe fn ramfs_fill_super_impl(
     sb: *mut bindings::super_block,
     _data: Option<&mut <BS2Ramfs as FileSystemBase>::MountOptions>,
-    silent: c_int,
+    _silent: c_int,
 ) -> Result {
     pr_emerg!("Reached ramfs_fill_super_impl");
-    let mut sb = &mut *sb;
-    sb.s_fs_info = ptr::null_mut();
+    let mut sb = sb.as_mut().expect("ramfs_fill_super got NULL super block");
 
-    pr_emerg!("Reached ramfs_super_impl:Boxleak");
+    sb.s_fs_info = ptr::null_mut();
     // freed in kill_superblock
-    let fsi = Box::leak(Box::try_new(ramfs_fs_info {
-        mount_opts: ramfs_mount_opts { mode: 0o775 },
+    let fsi = Box::leak(Box::try_new(RamfsFsInfo {
+        mount_opts: Default::default(),
     })?);
     sb.s_fs_info = fsi as *mut _ as *mut _;
 
@@ -335,28 +326,23 @@ unsafe fn ramfs_fill_super_impl(
     sb.s_blocksize = kernel::PAGE_SIZE as _;
     sb.s_blocksize_bits = PAGE_SHIFT as _;
     sb.s_magic = BS2RAMFS_MAGIC;
-    sb.s_op = &ramfs_ops as *const _ as *mut _;
+    sb.s_op = &RAMFS_OPS as *const _ as *mut _;
     sb.s_time_gran = 1;
-
     pr_emerg!("SB members set");
+
     let inode = ramfs_get_inode(
         sb as *mut _,
         ptr::null_mut(),
         (Mode::S_IFDIR.as_int() as bindings::mode_t | fsi.mount_opts.mode) as _,
         0,
     );
-
     pr_emerg!("Completed ramfs_fill_super_impl::get_inode");
-    // niklas: added because I saw it in ctiedt/rsramfs
-    if inode.is_null() {
-        return Err(Error::ENOMEM);
-    }
-    sb.s_root = bindings::d_make_root(inode);
+    // TODO: investigate if this really has to be set to NULL in case we run out of memory
+    sb.s_root = ptr::null_mut();
+    sb.s_root = inode
+        .as_mut()
+        .and_then(Dentry::make_root)
+        .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
     pr_emerg!("(rust) s_root: {:?}", sb.s_root);
-
-    if sb.s_root.is_null() {
-        Err(Error::ENOMEM)
-    } else {
-        Ok(())
-    }
+    Ok(())
 }
