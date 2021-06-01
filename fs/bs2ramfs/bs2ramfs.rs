@@ -4,15 +4,15 @@
 use alloc::boxed::Box;
 use core::{mem, ptr};
 
-use kernel::{bindings, c_types::*, dentry::Dentry, prelude::*, str::CStr, Error, Mode};
+use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
 
 // should be renamed at some point
 use kernel::fs::{
+    dentry::Dentry,
+    inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
     FileSystem, FileSystemBase, FileSystemType, SuperBlock, DEFAULT_ADDRESS_SPACE_OPERATIONS,
     DEFAULT_FILE_OPERATIONS, DEFAULT_INODE_OPERATIONS, DEFAULT_SUPER_OPS,
 };
-
-type Inode = bindings::inode;
 
 const PAGE_SHIFT: u32 = 12; // x86 (maybe)
 const MAX_LFS_FILESIZE: c_longlong = c_longlong::MAX;
@@ -79,19 +79,16 @@ impl FileSystemBase for BS2Ramfs {
         pr_emerg!("SB members set");
 
         unsafe {
+            // TODO: investigate if this really has to be set to NULL in case we run out of memory
+            sb.s_root = ptr::null_mut();
             let inode = ramfs_get_inode(
-                sb as *mut _,
-                ptr::null_mut(),
-                (Mode::S_IFDIR.as_int() as bindings::mode_t | fsi.mount_opts.mode) as _,
+                sb,
+                None,
+                Mode::S_IFDIR | Mode::from_int(fsi.mount_opts.mode as _),
                 0,
             );
             pr_emerg!("Completed ramfs_fill_super_impl::get_inode");
-            // TODO: investigate if this really has to be set to NULL in case we run out of memory
-            sb.s_root = ptr::null_mut();
-            sb.s_root = inode
-                .as_mut()
-                .and_then(Dentry::make_root)
-                .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
+            sb.s_root = inode.and_then(Dentry::make_root).ok_or(Error::ENOMEM)? as *mut _ as *mut _;
         }
         pr_emerg!("(rust) s_root: {:?}", sb.s_root);
 
@@ -185,92 +182,99 @@ static RAMFS_FILE_INODE_OPS: bindings::inode_operations = bindings::inode_operat
 };
 
 #[no_mangle]
-pub unsafe fn ramfs_get_inode(
-    sb: *mut bindings::super_block,
-    dir: *mut Inode,
-    mode: bindings::mode_t,
+pub unsafe fn ramfs_get_inode<'a>(
+    sb: &'a mut bindings::super_block,
+    dir: Option<&'_ mut Inode>,
+    mode: Mode,
     dev: bindings::dev_t,
-) -> *mut Inode {
-    let inode = bindings::new_inode(sb);
+) -> Option<&'a mut Inode> {
+    Inode::new(sb).map(|inode| {
+        inode.i_ino = Inode::next_ino() as _;
+        inode.init_owner(&mut bindings::init_user_ns, dir, mode);
 
-    if let Some(inode @ &mut _) = inode.as_mut() {
-        inode.i_ino = bindings::get_next_ino() as _;
-        bindings::inode_init_owner(&mut bindings::init_user_ns as *mut _, inode, dir, mode as _);
         (*inode.i_mapping).a_ops = &RAMFS_AOPS;
         rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
         rust_helper_mapping_set_unevictable(inode.i_mapping);
-        inode.i_atime = bindings::current_time(inode);
-        inode.i_mtime = inode.i_atime;
-        inode.i_ctime = inode.i_atime;
-        match mode & Mode::S_IFMT.as_int() as bindings::mode_t {
-            bindings::S_IFREG => {
+
+        inode.update_acm_time(UpdateATime::Yes, UpdateCTime::Yes, UpdateMTime::Yes);
+        match mode & Mode::S_IFMT {
+            Mode::S_IFREG => {
                 inode.i_op = &RAMFS_FILE_INODE_OPS;
                 inode.__bindgen_anon_3.i_fop = &RAMFS_FILE_OPS as *const _ as *mut _;
             }
-            bindings::S_IFDIR => {
+            Mode::S_IFDIR => {
                 inode.i_op = &RAMFS_DIR_INODE_OPS;
                 inode.__bindgen_anon_3.i_fop = &bindings::simple_dir_operations;
-                bindings::inc_nlink(inode);
+                inode.inc_nlink();
             }
-            bindings::S_IFLNK => {
+            Mode::S_IFLNK => {
                 inode.i_op = &bindings::page_symlink_inode_operations;
-                bindings::inode_nohighmem(inode);
+                inode.nohighmem();
             }
             _ => {
-                bindings::init_special_inode(inode, mode as _, dev);
+                inode.init_special(mode, dev);
             }
         }
-    }
 
-    inode
+        inode
+    })
 }
 
 unsafe extern "C" fn ramfs_mknod(
     _ns: *mut bindings::user_namespace,
-    dir: *mut Inode,
+    dir: *mut bindings::inode,
     dentry: *mut bindings::dentry,
     mode: bindings::umode_t,
     dev: bindings::dev_t,
 ) -> i32 {
-    let inode = ramfs_get_inode((*dir).i_sb, dir, mode as _, dev);
-
-    if let Some(inode) = inode.as_mut() {
+    let dir = dir
+        .as_mut()
+        .expect("ramfs_mknod got NULL directory")
+        .as_mut();
+    ramfs_get_inode(
+        dir.i_sb.as_mut().expect("dir has NULL super block"),
+        Some(dir),
+        Mode::from_int(mode),
+        dev,
+    )
+    .map_or(Error::ENOSPC.to_kernel_errno(), move |inode| {
         let dentry = dentry
             .as_mut()
             .expect("Called ramfs_mknod with NULL dentry")
             .as_mut();
         dentry.instantiate(inode);
         dentry.get();
-        (*dir).i_ctime = bindings::current_time(dir);
-        (*dir).i_mtime = (*dir).i_ctime;
+        dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
         0
-    } else {
-        Error::ENOSPC.to_kernel_errno()
-    }
+    })
 }
 
 unsafe extern "C" fn ramfs_mkdir(
     ns: *mut bindings::user_namespace,
-    dir: *mut Inode,
+    dir: *mut bindings::inode,
     dentry: *mut bindings::dentry,
     mode: bindings::umode_t,
 ) -> i32 {
+    let dir = dir
+        .as_mut()
+        .expect("ramfs_mkdir got NULL directory")
+        .as_mut();
     if ramfs_mknod(
         ns,
-        dir,
+        dir.as_ptr_mut(),
         dentry,
         mode | Mode::S_IFDIR.as_int() as bindings::umode_t,
         0,
     ) < 0
     {
-        bindings::inc_nlink(dir);
+        dir.inc_nlink();
     }
     0
 }
 
 unsafe extern "C" fn ramfs_create(
     ns: *mut bindings::user_namespace,
-    dir: *mut Inode,
+    dir: *mut bindings::inode,
     dentry: *mut bindings::dentry,
     mode: bindings::umode_t,
     _excl: bool,
@@ -287,22 +291,26 @@ unsafe extern "C" fn ramfs_create(
 #[no_mangle]
 unsafe extern "C" fn ramfs_symlink(
     _ns: *mut bindings::user_namespace,
-    dir: *mut Inode,
+    dir: *mut bindings::inode,
     dentry: *mut bindings::dentry,
     symname: *const c_char,
 ) -> i32 {
     pr_info!("in symlink");
-    let inode = ramfs_get_inode(
-        (*dir).i_sb,
-        dir,
-        (Mode::S_IFLNK | Mode::S_IRWXUGO).as_int() as _,
+    let dir = dir
+        .as_mut()
+        .expect("ramfs_symlink got NULL directory")
+        .as_mut();
+    ramfs_get_inode(
+        dir.i_sb.as_mut().expect("dir had NULL super block"),
+        Some(dir),
+        Mode::S_IFLNK | Mode::S_IRWXUGO,
         0,
-    );
-    pr_info!("got inode ptr {:?}", inode);
-    if let Some(inode) = inode.as_mut() {
+    )
+    .map_or(Error::ENOSPC.to_kernel_errno(), |inode| {
+        pr_info!("got inode ptr {:?}", inode.as_ptr_mut());
         let l = bindings::strlen(symname) + 1;
         pr_info!("str has len {:?}", l);
-        let ret = bindings::page_symlink(inode as *mut _, symname, l as _);
+        let ret = bindings::page_symlink(inode.as_ptr_mut(), symname, l as _);
         if ret == 0 {
             pr_info!("page_symlink is ok");
             let dentry = dentry
@@ -311,17 +319,14 @@ unsafe extern "C" fn ramfs_symlink(
                 .as_mut();
             dentry.instantiate(inode);
             dentry.get();
-            (*dir).i_mtime = bindings::current_time(dir);
-            (*dir).i_ctime = (*dir).i_mtime;
+            dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
             pr_info!("current_time is ok");
         } else {
-            bindings::iput(inode);
+            inode.put();
             pr_info!("iput is ok");
         }
         ret
-    } else {
-        Error::ENOSPC.to_kernel_errno()
-    }
+    })
 }
 
 static RAMFS_DIR_INODE_OPS: bindings::inode_operations = bindings::inode_operations {
