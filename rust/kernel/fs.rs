@@ -1,3 +1,5 @@
+pub mod inode;
+
 use core::ptr;
 
 use crate::ret_err_ptr;
