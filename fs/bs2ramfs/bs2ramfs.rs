@@ -61,10 +61,44 @@ impl FileSystemBase for BS2Ramfs {
 
     fn fill_super(
         sb: &mut SuperBlock,
-        data: Option<&mut Self::MountOptions>,
-        silent: c_int,
+        _data: Option<&mut Self::MountOptions>,
+        _silent: c_int,
     ) -> Result {
-        unsafe { ramfs_fill_super_impl(sb, data, silent) }
+        pr_emerg!("Reached ramfs_fill_super_impl");
+
+        sb.s_fs_info = ptr::null_mut();
+        // freed in kill_superblock
+        let fsi = Box::leak(Box::try_new(RamfsFsInfo {
+            mount_opts: Default::default(),
+        })?);
+        sb.s_fs_info = fsi as *mut _ as *mut _;
+
+        sb.s_maxbytes = MAX_LFS_FILESIZE;
+        sb.s_blocksize = kernel::PAGE_SIZE as _;
+        sb.s_blocksize_bits = PAGE_SHIFT as _;
+        sb.s_magic = BS2RAMFS_MAGIC;
+        sb.s_op = &RAMFS_OPS as *const _ as *mut _;
+        sb.s_time_gran = 1;
+        pr_emerg!("SB members set");
+
+        unsafe {
+            let inode = ramfs_get_inode(
+                sb as *mut _,
+                ptr::null_mut(),
+                (Mode::S_IFDIR.as_int() as bindings::mode_t | fsi.mount_opts.mode) as _,
+                0,
+            );
+            pr_emerg!("Completed ramfs_fill_super_impl::get_inode");
+            // TODO: investigate if this really has to be set to NULL in case we run out of memory
+            sb.s_root = ptr::null_mut();
+            sb.s_root = inode
+                .as_mut()
+                .and_then(Dentry::make_root)
+                .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
+        }
+        pr_emerg!("(rust) s_root: {:?}", sb.s_root);
+
+        Ok(())
     }
 }
 kernel::declare_fs_type!(BS2Ramfs, BS2RAMFS_FS_TYPE);
@@ -305,44 +339,3 @@ static RAMFS_DIR_INODE_OPS: bindings::inode_operations = bindings::inode_operati
     rename: Some(bindings::simple_rename),
     ..DEFAULT_INODE_OPERATIONS
 };
-
-#[no_mangle]
-unsafe fn ramfs_fill_super_impl(
-    sb: *mut bindings::super_block,
-    _data: Option<&mut <BS2Ramfs as FileSystemBase>::MountOptions>,
-    _silent: c_int,
-) -> Result {
-    pr_emerg!("Reached ramfs_fill_super_impl");
-    let mut sb = sb.as_mut().expect("ramfs_fill_super got NULL super block");
-
-    sb.s_fs_info = ptr::null_mut();
-    // freed in kill_superblock
-    let fsi = Box::leak(Box::try_new(RamfsFsInfo {
-        mount_opts: Default::default(),
-    })?);
-    sb.s_fs_info = fsi as *mut _ as *mut _;
-
-    sb.s_maxbytes = MAX_LFS_FILESIZE;
-    sb.s_blocksize = kernel::PAGE_SIZE as _;
-    sb.s_blocksize_bits = PAGE_SHIFT as _;
-    sb.s_magic = BS2RAMFS_MAGIC;
-    sb.s_op = &RAMFS_OPS as *const _ as *mut _;
-    sb.s_time_gran = 1;
-    pr_emerg!("SB members set");
-
-    let inode = ramfs_get_inode(
-        sb as *mut _,
-        ptr::null_mut(),
-        (Mode::S_IFDIR.as_int() as bindings::mode_t | fsi.mount_opts.mode) as _,
-        0,
-    );
-    pr_emerg!("Completed ramfs_fill_super_impl::get_inode");
-    // TODO: investigate if this really has to be set to NULL in case we run out of memory
-    sb.s_root = ptr::null_mut();
-    sb.s_root = inode
-        .as_mut()
-        .and_then(Dentry::make_root)
-        .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
-    pr_emerg!("(rust) s_root: {:?}", sb.s_root);
-    Ok(())
-}
