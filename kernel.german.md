@@ -8,12 +8,14 @@ Kernel holen (z.B. [`github.com/niklasmohrin/linux`](https://github.com/niklasmo
 
 Siehe [`quick-start.rst`](https://github.com/niklasmohrin/linux/blob/ramfs/Documentation/rust/quick-start.rst) für Toolchain.
 
+Wir haben die zwei Skripte `b` und `scp_all` zusammengestellt. Insbesondere ist `b` ein Wrapper um den `make` command, der die Compiler Optionen setzt (also `rustup default` nicht verändert werden muss). Falls man die nicht benutzen möchte, hier unser vorherige Anleitung:
+
 ```console
 $ mkdir -p builds/{kernel, modules}
 $ cd mylinuxclone
 $ make O=../builds/kernel defconfig                      # wir wollen das repo selbst nicht zum bauen benutzen
 $ cd ../builds/kernel
-$ rustup default nightly-2021-02-20
+$ rustup default nightly-2021-05-29
 $ make menuconfig                                        # Rust Support auswählen, Rest erstmal egal
 $ make ARCH=x86_64 CC=clang -j12                         # baut Kernel und gewählte Module
 ...
