@@ -21,7 +21,7 @@ use crate::sync::{Ref, RefCounted};
 /// C header: [`include/uapi/linux/stat.h`](../../../../include/uapi/linux/stat.h)
 ///
 /// C header: [`include/linux/stat.h`](../../../../include/linux/stat.h)
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Mode(bindings::umode_t);
 
 impl Mode {
