@@ -1,10 +1,8 @@
-use alloc::boxed::Box;
 use core::ptr;
 
 use crate::ret_err_ptr;
 use crate::{
-    bindings, buffer::Buffer, c_types::*, error::from_kernel_err_ptr, prelude::*, str::CStr, Error,
-    Result,
+    bindings, c_types::*, error::from_kernel_err_ptr, prelude::*, str::CStr, Error, Result,
 };
 
 pub type FileSystemType = bindings::file_system_type;
@@ -17,7 +15,6 @@ pub trait FileSystemBase {
     const FS_FLAGS: c_int;
     const OWNER: *mut bindings::module;
 
-    // TODO: is that a fair return type here?
     fn mount(
         fs_type: &'_ mut FileSystemType,
         flags: c_int,
@@ -25,9 +22,7 @@ pub trait FileSystemBase {
         data: Option<&mut Self::MountOptions>,
     ) -> Result<*mut bindings::dentry>;
 
-    // fn kill_superblock(sb: &mut SuperBlock);
-
-    // fn fill_superblock(sb: Box<SuperBlock>, data: Box<MountOptions>, silent: bool);
+    fn kill_superblock(sb: &mut SuperBlock);
 
     unsafe extern "C" fn mount_raw(
         fs_type: *mut bindings::file_system_type,
@@ -43,39 +38,11 @@ pub trait FileSystemBase {
     }
 
     unsafe extern "C" fn kill_sb_raw(sb: *mut bindings::super_block) {
-        // let sb = SuperBlock::from_raw(sb);
-        // self.kill_superblock(sb);
-        // let _ = SuperBlock::into_raw(sb);
+        let sb = sb
+            .as_mut()
+            .expect("FileSystemBase::kill_sb_raw got NULL super block");
+        Self::kill_superblock(sb);
     }
-
-    // fn mount_bdev(flags: u32, dev_name: &CStr, data: Box<MountOptions>) {
-    //     bindings::mount_bdev(
-    //         Self::file_system_type(),
-    //         flags,
-    //         CStr::into_raw(dev_name),
-    //         MountOptions::into_raw(data),
-    //         self.fill_super_raw
-    //     );
-    // }
-
-    // unsafe extern "C" fn fill_super_raw(sb: *mut bindings::super_block, data: *mut c_void, silent: bool) {
-    //     let sb = Box::from_raw(sb);
-    //     let data = MountOptions::from_raw(data);
-    //     self.fill_superblock(sb, data, silent);
-    //     sb.s_magic = SuperBlock::MAGIC;
-    //     sb.s_blocksize = SuperBlock::BLOCKSIZE;
-    //     sb.s_blocksize_bits = SuperBlock::BLOCKSIZE_BITS;
-    //     let s_ops = bindings::super_operations {
-    //         alloc_inode: SuperBlock::alloc_inode_raw as *mut _,
-    //         drop_inode: SuperBlock::drop_inode_raw as *mut _,
-    //         statfs: SuperBlock::statfs_raw as *mut _,
-    //         ..Default::defaults()
-    //     };
-    //     sb.s_op = s_ops;
-    //     // ... register SuperBlock (associated) dropt_node, statfs, constants
-    //     let _ = Box::into_raw(sb);
-    //     let _ = MountOptions::into_raw(data);
-    // }
 
     fn fill_super(
         _sb: &mut SuperBlock,
@@ -155,6 +122,23 @@ pub trait FileSystem: FileSystemBase + DeclaredFileSystemType {
                 Some(Self::fill_super_raw),
             )
         })
+    }
+
+    // just moved here
+    // fn mount_bdev(flags: u32, dev_name: &CStr, data: Box<MountOptions>) {
+    //     bindings::mount_bdev(
+    //         Self::file_system_type(),
+    //         flags,
+    //         CStr::into_raw(dev_name),
+    //         MountOptions::into_raw(data),
+    //         self.fill_super_raw
+    //     );
+    // }
+
+    fn kill_litter_super(sb: &mut SuperBlock) {
+        unsafe {
+            bindings::kill_litter_super(sb as *mut _);
+        }
     }
 }
 

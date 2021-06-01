@@ -51,12 +51,9 @@ impl FileSystemBase for BS2Ramfs {
         Self::mount_nodev(flags, data)
     }
 
-    // fn kill_superblock(sb: &mut SuperBlock) {
-    //     unreachable!()
-    // }
-    unsafe extern "C" fn kill_sb_raw(sb: *mut bindings::super_block) {
-        let _ = Box::from_raw(mem::replace(&mut (*sb).s_fs_info, ptr::null_mut()));
-        bindings::kill_litter_super(sb);
+    fn kill_superblock(sb: &mut SuperBlock) {
+        let _ = unsafe { Box::from_raw(mem::replace(&mut sb.s_fs_info, ptr::null_mut())) };
+        Self::kill_litter_super(sb);
     }
 
     fn fill_super(
