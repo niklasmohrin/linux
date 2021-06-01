@@ -1,3 +1,4 @@
+pub mod dentry;
 pub mod inode;
 
 use core::ptr;

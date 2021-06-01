@@ -2,7 +2,7 @@ use core::mem;
 use core::ops::{Deref, DerefMut};
 
 use crate::bindings;
-pub type Inode = bindings::inode;
+use crate::fs::inode::Inode;
 
 extern "C" {
     fn rust_helper_dget(dentry: *mut bindings::dentry);
@@ -40,7 +40,7 @@ impl Dentry {
     }
 
     pub fn make_root(inode: &mut Inode) -> Option<&mut Self> {
-        unsafe { (bindings::d_make_root(inode as *mut _) as *mut Self).as_mut() }
+        unsafe { (bindings::d_make_root(inode.as_ptr_mut()) as *mut Self).as_mut() }
     }
 
     pub fn lookup(&mut self, query: *const bindings::qstr) -> Option<&mut Self> {
@@ -73,13 +73,13 @@ impl Dentry {
 
     pub fn add(&mut self, inode: &mut Inode) {
         unsafe {
-            bindings::d_add(self.as_ptr_mut(), inode as *mut _);
+            bindings::d_add(self.as_ptr_mut(), inode.as_ptr_mut());
         }
     }
 
     pub fn instantiate(&mut self, inode: &mut Inode) {
         unsafe {
-            bindings::d_instantiate(self.as_ptr_mut(), inode as *mut _);
+            bindings::d_instantiate(self.as_ptr_mut(), inode.as_ptr_mut());
         }
     }
 }

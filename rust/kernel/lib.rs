@@ -44,7 +44,6 @@ pub mod bindings;
 pub mod buffer;
 pub mod c_types;
 pub mod chrdev;
-pub mod dentry;
 #[macro_use]
 mod error;
 pub mod file;
