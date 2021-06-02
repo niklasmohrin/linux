@@ -1,5 +1,6 @@
 pub mod dentry;
 pub mod inode;
+pub mod libfs_functions;
 
 use core::ptr;
 
