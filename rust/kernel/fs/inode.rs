@@ -3,6 +3,7 @@ use core::{mem, ptr};
 
 use crate::bindings;
 use crate::c_types::*;
+use crate::file_operations::{FileOpenAdapter, FileOpener, FileOperationsVtable};
 use crate::fs::SuperBlock;
 use crate::types::Mode;
 
@@ -92,6 +93,28 @@ impl Inode {
         unsafe {
             bindings::iput(self.as_ptr_mut());
         }
+    }
+
+    pub fn set_file_operations<OPS: FileOpener<<NopFileOpenAdapter as FileOpenAdapter>::Arg>>(
+        &mut self,
+    ) {
+        self.0.__bindgen_anon_3.i_fop =
+            unsafe { FileOperationsVtable::<NopFileOpenAdapter, OPS>::build() };
+    }
+}
+
+pub struct NopFileOpenAdapter;
+
+// don't really understand what this means, but we need someone to impl it and chrdev also returns
+// (), so let's stick to this for now
+impl FileOpenAdapter for NopFileOpenAdapter {
+    type Arg = ();
+
+    unsafe fn convert(
+        _inode: *mut bindings::inode,
+        _file: *mut bindings::file,
+    ) -> *const Self::Arg {
+        &()
     }
 }
 
