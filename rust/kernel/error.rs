@@ -6,8 +6,8 @@
 
 use crate::{bindings, c_types, declare_constant_from_bindings, macros::DO_NEGATE, str::CStr};
 use alloc::{alloc::AllocError, collections::TryReserveError};
-use core::convert::From;
-use core::fmt;
+use core::convert::{From, TryInto};
+use core::fmt::{self, Debug};
 use core::num::TryFromIntError;
 use core::str::{self, Utf8Error};
 
@@ -23,6 +23,20 @@ use core::str::{self, Utf8Error};
 pub struct Error(c_types::c_int);
 
 impl Error {
+    pub fn parse_int<T>(value: T) -> Result<T>
+    where
+        T: TryInto<c_types::c_int> + Copy,
+        <T as TryInto<c_types::c_int>>::Error: Debug,
+    {
+        match value
+            .try_into()
+            .expect("Couldn't convert value given to Error::parse_int into c_int")
+        {
+            e if e.is_negative() => Err(Error::from_kernel_errno(e)),
+            _ => Ok(value),
+        }
+    }
+
     /// Creates an [`Error`] from a kernel error code.
     ///
     /// It is a bug to pass an out-of-range `errno`. `EINVAL` would
