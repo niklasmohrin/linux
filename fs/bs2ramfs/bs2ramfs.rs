@@ -4,14 +4,17 @@
 use alloc::boxed::Box;
 use core::{mem, ptr};
 
+use kernel::file::File;
+use kernel::file_operations::{FileOperations, SeekFrom};
 use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
 
 // should be renamed at some point
 use kernel::fs::{
     dentry::Dentry,
     inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
-    FileSystem, FileSystemBase, FileSystemType, SuperBlock, DEFAULT_ADDRESS_SPACE_OPERATIONS,
-    DEFAULT_FILE_OPERATIONS, DEFAULT_INODE_OPERATIONS, DEFAULT_SUPER_OPS,
+    libfs_functions, FileSystem, FileSystemBase, FileSystemType, SuperBlock,
+    DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_FILE_OPERATIONS, DEFAULT_INODE_OPERATIONS,
+    DEFAULT_SUPER_OPS,
 };
 
 const PAGE_SHIFT: u32 = 12; // x86 (maybe)
@@ -146,6 +149,17 @@ unsafe extern "C" fn ramfs_show_options(
     0
 }
 
+#[derive(Default)]
+struct Bs2RamfsFileOps;
+
+impl FileOperations for Bs2RamfsFileOps {
+    kernel::declare_file_operations!(seek);
+
+    fn seek(&self, file: &File, pos: SeekFrom) -> Result<u64> {
+        libfs_functions::generic_file_llseek(file, pos)
+    }
+}
+
 const RAMFS_FILE_OPS: bindings::file_operations = bindings::file_operations {
     read_iter: Some(bindings::generic_file_read_iter),
     write_iter: Some(bindings::generic_file_write_iter),
@@ -200,7 +214,8 @@ pub unsafe fn ramfs_get_inode<'a>(
         match mode & Mode::S_IFMT {
             Mode::S_IFREG => {
                 inode.i_op = &RAMFS_FILE_INODE_OPS;
-                inode.__bindgen_anon_3.i_fop = &RAMFS_FILE_OPS as *const _ as *mut _;
+                inode.set_file_operations::<Bs2RamfsFileOps>();
+                // inode.__bindgen_anon_3.i_fop = &RAMFS_FILE_OPS as *const _ as *mut _;
             }
             Mode::S_IFDIR => {
                 inode.i_op = &RAMFS_DIR_INODE_OPS;
