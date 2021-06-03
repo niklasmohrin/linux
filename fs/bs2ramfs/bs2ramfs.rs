@@ -5,8 +5,10 @@ use alloc::boxed::Box;
 use core::{mem, ptr};
 
 use kernel::file::File;
-use kernel::file_operations::{FileOperations, SeekFrom};
+use kernel::file_operations::{FileOperations, SeekFrom, Kiocb};
+use kernel::iov_iter::IovIter;
 use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
+use kernel::io_buffer::{IoBufferReader, IoBufferWriter};
 
 // should be renamed at some point
 use kernel::fs::{
@@ -153,7 +155,15 @@ unsafe extern "C" fn ramfs_show_options(
 struct Bs2RamfsFileOps;
 
 impl FileOperations for Bs2RamfsFileOps {
-    kernel::declare_file_operations!(seek);
+    kernel::declare_file_operations!(custom_read_iter, fsync, seek);
+
+    fn read_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
+        libfs_functions::generic_file_read_iter(iocb, iter)
+    }
+
+    fn fsync(&self, file: &File, start: u64, end: u64, datasync: bool) -> Result<u32> {
+        libfs_functions::noop_fsync(file, start, end, datasync)
+    }
 
     fn seek(&self, file: &File, pos: SeekFrom) -> Result<u64> {
         libfs_functions::generic_file_llseek(file, pos)
