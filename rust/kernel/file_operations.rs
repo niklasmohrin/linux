@@ -19,6 +19,7 @@ use crate::{
     sync::CondVar,
     types::PointerWrapper,
     user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
+    fs::kiocb::Kiocb,
 };
 
 /// Wraps the kernel's `struct poll_table_struct`.
@@ -118,8 +119,6 @@ unsafe extern "C" fn read_callback<T: FileOperations>(
     }
 }
 
-pub type Kiocb = bindings::kiocb;
-
 unsafe extern "C" fn custom_read_iter_callback<T: FileOperations>(
     iocb: *mut bindings::kiocb,
     raw_iter: *mut bindings::iov_iter,
@@ -128,7 +127,7 @@ unsafe extern "C" fn custom_read_iter_callback<T: FileOperations>(
         let mut iter = IovIter::from_ptr(raw_iter);
         let file = (*iocb).ki_filp;
         let f = &*((*file).private_data as *const T);
-        let read = f.read_iter(&mut *iocb, &mut iter)?;
+        let read = f.read_iter(iocb.as_mut().unwrap().as_mut(), &mut iter)?;
         Ok(read as _)
     }
 }

@@ -5,7 +5,8 @@ use alloc::boxed::Box;
 use core::{mem, ptr};
 
 use kernel::file::File;
-use kernel::file_operations::{FileOperations, SeekFrom, Kiocb};
+use kernel::file_operations::{FileOperations, SeekFrom};
+use kernel::fs::kiocb::Kiocb;
 use kernel::iov_iter::IovIter;
 use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
 use kernel::io_buffer::{IoBufferReader, IoBufferWriter};
