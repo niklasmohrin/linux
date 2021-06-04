@@ -14,12 +14,12 @@ use crate::{
     error::{Error, Result},
     file::{File, FileRef},
     from_kernel_result,
+    fs::kiocb::Kiocb,
     io_buffer::{IoBufferReader, IoBufferWriter},
     iov_iter::IovIter,
     sync::CondVar,
     types::PointerWrapper,
     user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
-    fs::kiocb::Kiocb,
 };
 
 /// Wraps the kernel's `struct poll_table_struct`.
@@ -119,7 +119,7 @@ unsafe extern "C" fn read_callback<T: FileOperations>(
     }
 }
 
-unsafe extern "C" fn custom_read_iter_callback<T: FileOperations>(
+unsafe extern "C" fn read_iter_callback<T: FileOperations>(
     iocb: *mut bindings::kiocb,
     raw_iter: *mut bindings::iov_iter,
 ) -> isize {
@@ -128,21 +128,6 @@ unsafe extern "C" fn custom_read_iter_callback<T: FileOperations>(
         let file = (*iocb).ki_filp;
         let f = &*((*file).private_data as *const T);
         let read = f.read_iter(iocb.as_mut().unwrap().as_mut(), &mut iter)?;
-        Ok(read as _)
-    }
-}
-
-unsafe extern "C" fn read_iter_callback<T: FileOperations>(
-    iocb: *mut bindings::kiocb,
-    raw_iter: *mut bindings::iov_iter,
-) -> isize {
-    from_kernel_result! {
-        let mut iter = unsafe { IovIter::from_ptr(raw_iter) };
-        let file = unsafe { (*iocb).ki_filp };
-        let offset = unsafe { (*iocb).ki_pos };
-        let f = unsafe { &*((*file).private_data as *const T) };
-        let read = f.read(unsafe { &FileRef::from_ptr(file) }, &mut iter, offset.try_into()?)?;
-        unsafe { (*iocb).ki_pos += bindings::loff_t::try_from(read).unwrap() };
         Ok(read as _)
     }
 }
@@ -332,12 +317,7 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
         } else {
             None
         },
-        read_iter: if T::TO_USE.custom_read_iter {
-            // if T::TO_USE.read_iter {
-            //     core::compile_error!("Should not declare default and custom read_iter");
-            // }
-            Some(custom_read_iter_callback::<T>)
-        } else if T::TO_USE.read_iter {
+        read_iter: if T::TO_USE.read_iter {
             Some(read_iter_callback::<T>)
         } else {
             None
@@ -378,9 +358,6 @@ pub struct ToUse {
     /// The `read_iter` field of [`struct file_operations`].
     pub read_iter: bool,
 
-    /// The custom implementation of the `read_iter` field of [`struct file_operations`].
-    pub custom_read_iter: bool,
-
     /// The `write` field of [`struct file_operations`].
     pub write: bool,
 
@@ -411,7 +388,6 @@ pub struct ToUse {
 pub const USE_NONE: ToUse = ToUse {
     read: false,
     read_iter: false,
-    custom_read_iter: false,
     write: false,
     write_iter: false,
     seek: false,
@@ -581,13 +557,19 @@ pub trait FileOperations: Send + Sync + Sized {
 
     /// Reads data from this file to the caller's buffer.
     ///
-    /// Corresponds to the `read` and - if no custom read_iter implementation is present - `read_iter` function pointers in `struct file_operations`.
+    /// Corresponds to the `read` function pointer in `struct file_operations`.
     fn read<T: IoBufferWriter>(&self, _file: &File, _data: &mut T, _offset: u64) -> Result<usize> {
         Err(Error::EINVAL)
     }
 
-    fn read_iter(&self, _iocb: &mut Kiocb, _iter: &mut IovIter) -> Result<usize> {
-        Err(Error::EINVAL)
+    /// Reads data from this file to the caller's buffer.
+    ///
+    /// Corresponds to the `read_iter` function pointer in `struct file_operations`.
+    fn read_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
+        let file = iocb.get_file();
+        let offset = iocb.get_offset();
+        let read = self.read(&file, iter, offset)?;
+        Ok(read)
     }
 
     /// Writes data from the caller's buffer to this file.

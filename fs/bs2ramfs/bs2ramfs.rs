@@ -156,7 +156,7 @@ unsafe extern "C" fn ramfs_show_options(
 struct Bs2RamfsFileOps;
 
 impl FileOperations for Bs2RamfsFileOps {
-    kernel::declare_file_operations!(custom_read_iter, fsync, seek);
+    kernel::declare_file_operations!(read_iter, fsync, seek);
 
     fn read_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
         libfs_functions::generic_file_read_iter(iocb, iter)
