@@ -1,9 +1,8 @@
 use core::mem;
 use core::ops::{Deref, DerefMut};
 
-use crate::file::{FileRef, File};
+use crate::file::File;
 use crate::bindings;
-use crate::Result;
 
 #[repr(transparent)]
 pub struct Kiocb(bindings::kiocb);

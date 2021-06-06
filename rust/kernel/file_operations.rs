@@ -154,12 +154,10 @@ unsafe extern "C" fn write_iter_callback<T: FileOperations>(
     raw_iter: *mut bindings::iov_iter,
 ) -> isize {
     from_kernel_result! {
-        let mut iter = unsafe { IovIter::from_ptr(raw_iter) };
-        let file = unsafe { (*iocb).ki_filp };
-        let offset = unsafe { (*iocb).ki_pos };
-        let f = unsafe { &*((*file).private_data as *const T) };
-        let written = f.write(unsafe { &FileRef::from_ptr(file) }, &mut iter, offset.try_into()?)?;
-        unsafe { (*iocb).ki_pos += bindings::loff_t::try_from(written).unwrap() };
+        let mut iter = IovIter::from_ptr(raw_iter);
+        let file = (*iocb).ki_filp;
+        let f = &*((*file).private_data as *const T);
+        let written = f.write_iter(iocb.as_mut().unwrap().as_mut(), &mut iter)?;
         Ok(written as _)
     }
 }
@@ -248,6 +246,21 @@ unsafe extern "C" fn fsync_callback<T: FileOperations>(
     }
 }
 
+unsafe extern "C" fn get_unmapped_area_callback<T: FileOperations>(
+    file: *mut bindings::file,
+    addr: c_types::c_ulong,
+    len: c_types::c_ulong,
+    pgoff: c_types::c_ulong,
+    flags: c_types::c_ulong,
+) -> c_types::c_ulong {
+    let ret: i64 = from_kernel_result! {
+        let f = &*((*file).private_data as *const T);
+        let res = f.get_unmapped_area(&FileRef::from_ptr(file), addr, len, pgoff, flags)?;
+        Ok(res as _)
+    };
+    ret as _
+}
+
 unsafe extern "C" fn poll_callback<T: FileOperations>(
     file: *mut bindings::file,
     wait: *mut bindings::poll_table_struct,
@@ -258,6 +271,34 @@ unsafe extern "C" fn poll_callback<T: FileOperations>(
     }) {
         Ok(v) => v,
         Err(_) => bindings::POLLERR,
+    }
+}
+
+unsafe extern "C" fn splice_read_callback<T: FileOperations>(
+    file: *mut bindings::file,
+    ppos: *mut bindings::loff_t,
+    pipe: *mut bindings::pipe_inode_info,
+    len: c_types::c_size_t,
+    flags: c_types::c_uint,
+) -> c_types::c_ssize_t {
+    from_kernel_result! {
+        let f = &*((*file).private_data as *const T);
+        let ret = f.splice_read(&FileRef::from_ptr(file), ppos, &mut *pipe, len, flags)?;
+        Ok(ret as _)
+    }
+}
+
+unsafe extern "C" fn splice_write_callback<T: FileOperations>(
+    pipe: *mut bindings::pipe_inode_info,
+    file: *mut bindings::file,
+    ppos: *mut bindings::loff_t,
+    len: c_types::c_size_t,
+    flags: c_types::c_uint,
+) -> c_types::c_ssize_t {
+    from_kernel_result! {
+        let f = &*((*file).private_data as *const T);
+        let ret = f.splice_write(&mut *pipe, &FileRef::from_ptr(file), ppos, len, flags)?;
+        Ok(ret as _)
     }
 }
 
@@ -300,7 +341,11 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
         } else {
             None
         },
-        get_unmapped_area: None,
+        get_unmapped_area: if T::TO_USE.get_unmapped_area {
+            Some(get_unmapped_area_callback::<T>)
+        } else {
+            None
+        },
         iterate: None,
         iterate_shared: None,
         iopoll: None,
@@ -326,8 +371,16 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
         sendpage: None,
         setlease: None,
         show_fdinfo: None,
-        splice_read: None,
-        splice_write: None,
+        splice_read: if T::TO_USE.splice_read {
+            Some(splice_read_callback::<T>)
+        } else {
+            None
+        },
+        splice_write: if T::TO_USE.splice_write {
+            Some(splice_write_callback::<T>)
+        } else {
+            None
+        },
         unlocked_ioctl: if T::TO_USE.ioctl {
             Some(unlocked_ioctl_callback::<T>)
         } else {
@@ -376,11 +429,20 @@ pub struct ToUse {
     /// The `fsync` field of [`struct file_operations`].
     pub fsync: bool,
 
+    /// The `get_unmapped_area` field of [`struct file_operations`].
+    pub get_unmapped_area: bool,
+
     /// The `mmap` field of [`struct file_operations`].
     pub mmap: bool,
 
     /// The `poll` field of [`struct file_operations`].
     pub poll: bool,
+
+    /// The `splice_read` field of [`struct file_operations`].
+    pub splice_read: bool,
+
+    /// The `splice_write` field of [`struct file_operations`].
+    pub splice_write: bool,
 }
 
 /// A constant version where all values are to set to `false`, that is, all supported fields will
@@ -394,8 +456,11 @@ pub const USE_NONE: ToUse = ToUse {
     ioctl: false,
     compat_ioctl: false,
     fsync: false,
+    get_unmapped_area: false,
     mmap: false,
     poll: false,
+    splice_read: false,
+    splice_write: false,
 };
 
 /// Defines the [`FileOperations::TO_USE`] field based on a list of fields to be populated.
@@ -569,6 +634,8 @@ pub trait FileOperations: Send + Sync + Sized {
         let file = iocb.get_file();
         let offset = iocb.get_offset();
         let read = self.read(&file, iter, offset)?;
+        let offset = iocb.get_offset();
+        iocb.set_offset(offset + read as u64);
         Ok(read)
     }
 
@@ -577,6 +644,18 @@ pub trait FileOperations: Send + Sync + Sized {
     /// Corresponds to the `write` and `write_iter` function pointers in `struct file_operations`.
     fn write<T: IoBufferReader>(&self, _file: &File, _data: &mut T, _offset: u64) -> Result<usize> {
         Err(Error::EINVAL)
+    }
+
+    /// Writes data from the caller's buffer to this file.
+    ///
+    /// Corresponds to the `write_iter` function pointer in `struct file_operations`.
+    fn write_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
+        let file = iocb.get_file();
+        let offset = iocb.get_offset();
+        let written = self.write(&file, iter, offset)?;
+        let offset = iocb.get_offset();
+        iocb.set_offset(offset + written as u64);
+        Ok(written)
     }
 
     /// Changes the position of the file.
@@ -607,6 +686,20 @@ pub trait FileOperations: Send + Sync + Sized {
         Err(Error::EINVAL)
     }
 
+    /// Unmapped area.
+    ///
+    /// Corresponds to the `get_unmapped_area` function pointer in `struct file_operations`.
+    fn get_unmapped_area(
+        &self,
+        _file: &File,
+        _addr: u64,
+        _len: u64,
+        _pgoff: u64,
+        _flags: u64,
+    ) -> Result<u64> {
+        Err(Error::EINVAL)
+    }
+
     /// Maps areas of the caller's virtual memory with device/file memory.
     ///
     /// Corresponds to the `mmap` function pointer in `struct file_operations`.
@@ -621,5 +714,33 @@ pub trait FileOperations: Send + Sync + Sized {
     /// Corresponds to the `poll` function pointer in `struct file_operations`.
     fn poll(&self, _file: &File, _table: &PollTable) -> Result<u32> {
         Ok(bindings::POLLIN | bindings::POLLOUT | bindings::POLLRDNORM | bindings::POLLWRNORM)
+    }
+
+    /// Splice data from file to a pipe
+    ///
+    /// Corresponds to the `splice_read` function pointer in `struct file_operations`.
+    fn splice_read(
+        &self,
+        _file: &File,
+        _pos: *mut i64,
+        _pipe: &mut bindings::pipe_inode_info,
+        _len: usize,
+        _flags: u32,
+    ) -> Result<usize> {
+        Err(Error::EINVAL)
+    }
+
+    /// Splice data from pipe to a file
+    ///
+    /// Corresponds to the `splice_write` function pointer in `struct file_operations`.
+    fn splice_write(
+        &self,
+        _pipe: &mut bindings::pipe_inode_info,
+        _file: &File,
+        _pos: *mut i64,
+        _len: usize,
+        _flags: u32,
+    ) -> Result<usize> {
+        Err(Error::EINVAL)
     }
 }

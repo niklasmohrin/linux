@@ -2,7 +2,6 @@ use core::ops::{Deref, DerefMut};
 use core::{mem, ptr};
 
 use crate::bindings;
-use crate::c_types::*;
 use crate::file_operations::{FileOpenAdapter, FileOpener, FileOperationsVtable};
 use crate::fs::SuperBlock;
 use crate::types::Mode;

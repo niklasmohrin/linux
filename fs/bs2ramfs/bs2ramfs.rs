@@ -9,7 +9,6 @@ use kernel::file_operations::{FileOperations, SeekFrom};
 use kernel::fs::kiocb::Kiocb;
 use kernel::iov_iter::IovIter;
 use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
-use kernel::io_buffer::{IoBufferReader, IoBufferWriter};
 
 // should be renamed at some point
 use kernel::fs::{
@@ -131,19 +130,6 @@ struct RamfsFsInfo {
     mount_opts: RamfsMountOpts,
 }
 
-unsafe extern "C" fn ramfs_mmu_get_unmapped_area(
-    _file: *mut bindings::file,
-    _addr: c_ulong,
-    _len: c_ulong,
-    _pgoff: c_ulong,
-    _flags: c_ulong,
-) -> c_ulong {
-    pr_emerg!(
-        "AKAHSDkADKHAKHD WE ARE ABOUT TO PANIC (IN MMU_GET_UNMAPPED_AREA;;;; LOOK HERE COME ON"
-    );
-    unimplemented!()
-}
-
 unsafe extern "C" fn ramfs_show_options(
     _m: *mut bindings::seq_file,
     _root: *mut bindings::dentry,
@@ -156,32 +142,43 @@ unsafe extern "C" fn ramfs_show_options(
 struct Bs2RamfsFileOps;
 
 impl FileOperations for Bs2RamfsFileOps {
-    kernel::declare_file_operations!(read_iter, fsync, seek);
+    kernel::declare_file_operations!(read_iter, write_iter, mmap, fsync, splice_read, splice_write, seek, get_unmapped_area);
 
     fn read_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
         libfs_functions::generic_file_read_iter(iocb, iter)
+    }
+
+    fn write_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
+        libfs_functions::generic_file_write_iter(iocb, iter)
+    }
+    
+    fn mmap(&self, file: &File, vma: &mut bindings::vm_area_struct) -> Result {
+       libfs_functions::generic_file_mmap(file, vma) 
     }
 
     fn fsync(&self, file: &File, start: u64, end: u64, datasync: bool) -> Result<u32> {
         libfs_functions::noop_fsync(file, start, end, datasync)
     }
 
+    fn get_unmapped_area(&self, file: &File, addr: u64, len: u64, pgoff: u64, flags: u64) -> Result<u64> {
+        pr_emerg!(
+            "AKAHSDkADKHAKHD WE ARE ABOUT TO PANIC (IN MMU_GET_UNMAPPED_AREA;;;; LOOK HERE COME ON"
+        );
+        unimplemented!()
+    }
+
     fn seek(&self, file: &File, pos: SeekFrom) -> Result<u64> {
         libfs_functions::generic_file_llseek(file, pos)
     }
-}
 
-const RAMFS_FILE_OPS: bindings::file_operations = bindings::file_operations {
-    read_iter: Some(bindings::generic_file_read_iter),
-    write_iter: Some(bindings::generic_file_write_iter),
-    mmap: Some(bindings::generic_file_mmap),
-    fsync: Some(bindings::noop_fsync),
-    splice_read: Some(bindings::generic_file_splice_read),
-    splice_write: Some(bindings::iter_file_splice_write),
-    llseek: Some(bindings::generic_file_llseek),
-    get_unmapped_area: Some(ramfs_mmu_get_unmapped_area),
-    ..DEFAULT_FILE_OPERATIONS
-};
+    fn splice_read(&self, file: &File, pos: *mut i64, pipe: &mut bindings::pipe_inode_info, len: usize, flags: u32) -> Result<usize> {
+        libfs_functions::generic_file_splice_read(file, pos, pipe, len, flags)
+    }
+
+    fn splice_write(&self, pipe: &mut bindings::pipe_inode_info, file: &File, pos: *mut i64, len: usize, flags: u32) -> Result<usize> {
+        libfs_functions::iter_file_splice_write(pipe, file, pos, len, flags)
+    }
+}
 
 static RAMFS_OPS: bindings::super_operations = bindings::super_operations {
     statfs: Some(bindings::simple_statfs),
@@ -197,8 +194,6 @@ static RAMFS_AOPS: bindings::address_space_operations = bindings::address_space_
     set_page_dirty: Some(bindings::__set_page_dirty_nobuffers),
     ..DEFAULT_ADDRESS_SPACE_OPERATIONS
 };
-
-// impl FileOperations for BS2Ramfs // niklas: I think it's another struct, not BS2Ramfs
 
 static RAMFS_FILE_INODE_OPS: bindings::inode_operations = bindings::inode_operations {
     setattr: Some(bindings::simple_setattr),
