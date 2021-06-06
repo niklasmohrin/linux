@@ -1,8 +1,8 @@
 use core::mem;
 use core::ops::{Deref, DerefMut};
 
-use crate::file::File;
 use crate::bindings;
+use crate::file::File;
 
 #[repr(transparent)]
 pub struct Kiocb(bindings::kiocb);
@@ -46,6 +46,9 @@ impl Kiocb {
     }
 
     pub fn set_offset(&mut self, offset: u64) {
-        unsafe { (*(self.as_ptr_mut())).ki_pos = offset as _; }
+        unsafe {
+            (*(self.as_ptr_mut())).ki_pos = offset as _;
+        }
     }
 }
+

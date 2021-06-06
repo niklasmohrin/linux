@@ -15,8 +15,7 @@ use kernel::fs::{
     dentry::Dentry,
     inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
     libfs_functions, FileSystem, FileSystemBase, FileSystemType, SuperBlock,
-    DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_FILE_OPERATIONS, DEFAULT_INODE_OPERATIONS,
-    DEFAULT_SUPER_OPS,
+    DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_INODE_OPERATIONS, DEFAULT_SUPER_OPS,
 };
 
 const PAGE_SHIFT: u32 = 12; // x86 (maybe)
@@ -142,7 +141,16 @@ unsafe extern "C" fn ramfs_show_options(
 struct Bs2RamfsFileOps;
 
 impl FileOperations for Bs2RamfsFileOps {
-    kernel::declare_file_operations!(read_iter, write_iter, mmap, fsync, splice_read, splice_write, seek, get_unmapped_area);
+    kernel::declare_file_operations!(
+        read_iter,
+        write_iter,
+        mmap,
+        fsync,
+        splice_read,
+        splice_write,
+        seek,
+        get_unmapped_area
+    );
 
     fn read_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
         libfs_functions::generic_file_read_iter(iocb, iter)
@@ -151,16 +159,23 @@ impl FileOperations for Bs2RamfsFileOps {
     fn write_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
         libfs_functions::generic_file_write_iter(iocb, iter)
     }
-    
+
     fn mmap(&self, file: &File, vma: &mut bindings::vm_area_struct) -> Result {
-       libfs_functions::generic_file_mmap(file, vma) 
+        libfs_functions::generic_file_mmap(file, vma)
     }
 
     fn fsync(&self, file: &File, start: u64, end: u64, datasync: bool) -> Result<u32> {
         libfs_functions::noop_fsync(file, start, end, datasync)
     }
 
-    fn get_unmapped_area(&self, file: &File, addr: u64, len: u64, pgoff: u64, flags: u64) -> Result<u64> {
+    fn get_unmapped_area(
+        &self,
+        _file: &File,
+        _addr: u64,
+        _len: u64,
+        _pgoff: u64,
+        _flags: u64,
+    ) -> Result<u64> {
         pr_emerg!(
             "AKAHSDkADKHAKHD WE ARE ABOUT TO PANIC (IN MMU_GET_UNMAPPED_AREA;;;; LOOK HERE COME ON"
         );
@@ -171,11 +186,25 @@ impl FileOperations for Bs2RamfsFileOps {
         libfs_functions::generic_file_llseek(file, pos)
     }
 
-    fn splice_read(&self, file: &File, pos: *mut i64, pipe: &mut bindings::pipe_inode_info, len: usize, flags: u32) -> Result<usize> {
+    fn splice_read(
+        &self,
+        file: &File,
+        pos: *mut i64,
+        pipe: &mut bindings::pipe_inode_info,
+        len: usize,
+        flags: u32,
+    ) -> Result<usize> {
         libfs_functions::generic_file_splice_read(file, pos, pipe, len, flags)
     }
 
-    fn splice_write(&self, pipe: &mut bindings::pipe_inode_info, file: &File, pos: *mut i64, len: usize, flags: u32) -> Result<usize> {
+    fn splice_write(
+        &self,
+        pipe: &mut bindings::pipe_inode_info,
+        file: &File,
+        pos: *mut i64,
+        len: usize,
+        flags: u32,
+    ) -> Result<usize> {
         libfs_functions::iter_file_splice_write(pipe, file, pos, len, flags)
     }
 }
