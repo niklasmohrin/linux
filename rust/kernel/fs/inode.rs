@@ -3,7 +3,7 @@ use core::{mem, ptr};
 
 use crate::bindings;
 use crate::file_operations::{FileOpenAdapter, FileOpener, FileOperationsVtable};
-use crate::fs::SuperBlock;
+use crate::fs::super_block::SuperBlock;
 use crate::types::Mode;
 
 #[derive(PartialEq, Eq)]
@@ -32,7 +32,7 @@ impl Inode {
 
     pub fn new(sb: &mut SuperBlock) -> Option<&mut Self> {
         unsafe {
-            bindings::new_inode(sb as *mut _)
+            bindings::new_inode(sb.as_ptr_mut())
                 .as_mut()
                 .map(AsMut::as_mut)
         }

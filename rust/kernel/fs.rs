@@ -2,16 +2,18 @@ pub mod dentry;
 pub mod inode;
 pub mod kiocb;
 pub mod libfs_functions;
+pub mod super_block;
+pub mod super_operations;
 
 use core::ptr;
 
 use crate::ret_err_ptr;
 use crate::{
-    bindings, c_types::*, error::from_kernel_err_ptr, prelude::*, str::CStr, Error, Result,
+    bindings, c_types::*, error::from_kernel_err_ptr, fs::super_block::SuperBlock, prelude::*,
+    str::CStr, Error, Result,
 };
 
 pub type FileSystemType = bindings::file_system_type;
-pub type SuperBlock = bindings::super_block;
 
 pub trait FileSystemBase {
     type MountOptions = c_void;
@@ -27,7 +29,7 @@ pub trait FileSystemBase {
         data: Option<&mut Self::MountOptions>,
     ) -> Result<*mut bindings::dentry>;
 
-    fn kill_superblock(sb: &mut SuperBlock);
+    fn kill_super(sb: &mut SuperBlock);
 
     unsafe extern "C" fn mount_raw(
         fs_type: *mut bindings::file_system_type,
@@ -45,8 +47,9 @@ pub trait FileSystemBase {
     unsafe extern "C" fn kill_sb_raw(sb: *mut bindings::super_block) {
         let sb = sb
             .as_mut()
-            .expect("FileSystemBase::kill_sb_raw got NULL super block");
-        Self::kill_superblock(sb);
+            .expect("FileSystemBase::kill_sb_raw got NULL super block")
+            .as_mut();
+        Self::kill_super(sb);
     }
 
     fn fill_super(
@@ -64,7 +67,7 @@ pub trait FileSystemBase {
         silent: c_int,
     ) -> c_int {
         pr_emerg!("in fill_super_raw");
-        let sb = &mut *sb;
+        let sb = sb.as_mut().expect("SuperBlock was null").as_mut();
         let data = (data as *mut Self::MountOptions).as_mut();
         Self::fill_super(sb, data, silent)
             .map(|_| 0)
@@ -142,7 +145,7 @@ pub trait FileSystem: FileSystemBase + DeclaredFileSystemType {
 
     fn kill_litter_super(sb: &mut SuperBlock) {
         unsafe {
-            bindings::kill_litter_super(sb as *mut _);
+            bindings::kill_litter_super(sb.as_ptr_mut());
         }
     }
 }

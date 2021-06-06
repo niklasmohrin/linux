@@ -7,6 +7,7 @@ use core::{mem, ptr};
 use kernel::file::File;
 use kernel::file_operations::{FileOperations, SeekFrom};
 use kernel::fs::kiocb::Kiocb;
+use kernel::fs::super_operations::{Kstatfs, SeqFile, SuperOperations};
 use kernel::iov_iter::IovIter;
 use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
 
@@ -14,8 +15,10 @@ use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
 use kernel::fs::{
     dentry::Dentry,
     inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
-    libfs_functions, FileSystem, FileSystemBase, FileSystemType, SuperBlock,
-    DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_INODE_OPERATIONS, DEFAULT_SUPER_OPS,
+    libfs_functions,
+    super_block::SuperBlock,
+    FileSystem, FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS,
+    DEFAULT_INODE_OPERATIONS,
 };
 
 const PAGE_SHIFT: u32 = 12; // x86 (maybe)
@@ -55,7 +58,7 @@ impl FileSystemBase for BS2Ramfs {
         Self::mount_nodev(flags, data)
     }
 
-    fn kill_superblock(sb: &mut SuperBlock) {
+    fn kill_super(sb: &mut SuperBlock) {
         let _ = unsafe { Box::from_raw(mem::replace(&mut sb.s_fs_info, ptr::null_mut())) };
         Self::kill_litter_super(sb);
     }
@@ -67,34 +70,31 @@ impl FileSystemBase for BS2Ramfs {
     ) -> Result {
         pr_emerg!("Reached ramfs_fill_super_impl");
 
-        sb.s_fs_info = ptr::null_mut();
-        // freed in kill_superblock
-        let fsi = Box::leak(Box::try_new(RamfsFsInfo {
-            mount_opts: Default::default(),
-        })?);
-        sb.s_fs_info = fsi as *mut _ as *mut _;
+        // sb.s_fs_info = ptr::null_mut();
+        // freed in kill_super
+        // let fsi = Box::leak(Box::try_new(RamfsFsInfo {
+        //     mount_opts: Default::default(),
+        // })?);
+        // sb.s_fs_info = fsi as *mut _ as *mut _;
+        // sb.s_op = &RAMFS_OPS as *const _ as *mut _;
 
-        sb.s_maxbytes = MAX_LFS_FILESIZE;
-        sb.s_blocksize = kernel::PAGE_SIZE as _;
-        sb.s_blocksize_bits = PAGE_SHIFT as _;
-        sb.s_magic = BS2RAMFS_MAGIC;
-        sb.s_op = &RAMFS_OPS as *const _ as *mut _;
-        sb.s_time_gran = 1;
-        pr_emerg!("SB members set");
-
+        // sb.s_magic = ;
+        let ops = Bs2RamfsSuperOps::default();
+        // ops.fill(sb);
         unsafe {
             // TODO: investigate if this really has to be set to NULL in case we run out of memory
             sb.s_root = ptr::null_mut();
-            let inode = ramfs_get_inode(
-                sb,
-                None,
-                Mode::S_IFDIR | Mode::from_int(fsi.mount_opts.mode as _),
-                0,
-            );
+            let inode = ramfs_get_inode(sb, None, Mode::S_IFDIR | ops.mount_opts.mode, 0);
             pr_emerg!("Completed ramfs_fill_super_impl::get_inode");
             sb.s_root = inode.and_then(Dentry::make_root).ok_or(Error::ENOMEM)? as *mut _ as *mut _;
         }
         pr_emerg!("(rust) s_root: {:?}", sb.s_root);
+        sb.set_super_operations(ops);
+        sb.s_maxbytes = MAX_LFS_FILESIZE;
+        sb.s_blocksize = kernel::PAGE_SIZE as _;
+        sb.s_blocksize_bits = PAGE_SHIFT as _;
+        sb.s_time_gran = 1;
+        pr_emerg!("SB members set");
 
         Ok(())
     }
@@ -116,17 +116,15 @@ impl Drop for BS2Ramfs {
 }
 
 struct RamfsMountOpts {
-    pub mode: bindings::mode_t,
+    pub mode: Mode,
 }
 
 impl Default for RamfsMountOpts {
     fn default() -> Self {
-        Self { mode: 0o775 }
+        Self {
+            mode: Mode::from_int(0o775),
+        }
     }
-}
-
-struct RamfsFsInfo {
-    mount_opts: RamfsMountOpts,
 }
 
 unsafe extern "C" fn ramfs_show_options(
@@ -209,12 +207,33 @@ impl FileOperations for Bs2RamfsFileOps {
     }
 }
 
-static RAMFS_OPS: bindings::super_operations = bindings::super_operations {
-    statfs: Some(bindings::simple_statfs),
-    drop_inode: Some(bindings::generic_delete_inode),
-    show_options: Some(ramfs_show_options),
-    ..DEFAULT_SUPER_OPS
-};
+// static RAMFS_OPS: bindings::super_operations = bindings::super_operations {
+//     statfs: Some(bindings::simple_statfs),
+//     drop_inode: Some(bindings::generic_delete_inode),
+//     show_options: Some(ramfs_show_options),
+//     ..DEFAULT_SUPER_OPS
+// };
+
+#[derive(Default)]
+struct Bs2RamfsSuperOps {
+    mount_opts: RamfsMountOpts,
+}
+
+impl SuperOperations for Bs2RamfsSuperOps {
+    kernel::declare_super_operations!(statfs, drop_inode, show_options);
+
+    fn drop_inode(&self, _inode: &Inode) -> Result {
+        Err(Error::EINVAL)
+    }
+
+    fn statfs(&self, _root: &Dentry, _buf: &Kstatfs) -> Result {
+        Err(Error::EINVAL)
+    }
+
+    fn show_options(&self, _s: &SeqFile, _root: &Dentry) -> Result {
+        Err(Error::EINVAL)
+    }
+}
 
 static RAMFS_AOPS: bindings::address_space_operations = bindings::address_space_operations {
     readpage: Some(bindings::simple_readpage),
@@ -232,7 +251,7 @@ static RAMFS_FILE_INODE_OPS: bindings::inode_operations = bindings::inode_operat
 
 #[no_mangle]
 pub unsafe fn ramfs_get_inode<'a>(
-    sb: &'a mut bindings::super_block,
+    sb: &'a mut SuperBlock,
     dir: Option<&'_ mut Inode>,
     mode: Mode,
     dev: bindings::dev_t,
@@ -282,7 +301,10 @@ unsafe extern "C" fn ramfs_mknod(
         .expect("ramfs_mknod got NULL directory")
         .as_mut();
     ramfs_get_inode(
-        dir.i_sb.as_mut().expect("dir has NULL super block"),
+        dir.i_sb
+            .as_mut()
+            .expect("dir has NULL super block")
+            .as_mut(),
         Some(dir),
         Mode::from_int(mode),
         dev,
@@ -351,7 +373,10 @@ unsafe extern "C" fn ramfs_symlink(
         .expect("ramfs_symlink got NULL directory")
         .as_mut();
     ramfs_get_inode(
-        dir.i_sb.as_mut().expect("dir had NULL super block"),
+        dir.i_sb
+            .as_mut()
+            .expect("dir had NULL super block")
+            .as_mut(),
         Some(dir),
         Mode::S_IFLNK | Mode::S_IRWXUGO,
         0,
