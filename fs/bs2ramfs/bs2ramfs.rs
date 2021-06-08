@@ -207,13 +207,6 @@ impl FileOperations for Bs2RamfsFileOps {
     }
 }
 
-// static RAMFS_OPS: bindings::super_operations = bindings::super_operations {
-//     statfs: Some(bindings::simple_statfs),
-//     drop_inode: Some(bindings::generic_delete_inode),
-//     show_options: Some(ramfs_show_options),
-//     ..DEFAULT_SUPER_OPS
-// };
-
 #[derive(Default)]
 struct Bs2RamfsSuperOps {
     mount_opts: RamfsMountOpts,
@@ -222,16 +215,17 @@ struct Bs2RamfsSuperOps {
 impl SuperOperations for Bs2RamfsSuperOps {
     kernel::declare_super_operations!(statfs, drop_inode, show_options);
 
-    fn drop_inode(&self, _inode: &Inode) -> Result {
-        Err(Error::EINVAL)
+    fn drop_inode(&self, inode: &mut Inode) -> Result {
+        libfs_functions::generic_delete_inode(inode)
     }
 
-    fn statfs(&self, _root: &Dentry, _buf: &Kstatfs) -> Result {
-        Err(Error::EINVAL)
+    fn statfs(&self, root: &mut Dentry, buf: &mut Kstatfs) -> Result {
+        libfs_functions::simple_statfs(root, buf)
     }
 
-    fn show_options(&self, _s: &SeqFile, _root: &Dentry) -> Result {
-        Err(Error::EINVAL)
+    fn show_options(&self, _s: &mut SeqFile, _root: &mut Dentry) -> Result {
+        pr_emerg!("ramfs show options, doing nothing");
+        Ok(())
     }
 }
 

@@ -550,7 +550,7 @@ pub trait SuperOperations: Send + Sync + Sized + Default {
     //     Err(Error::EINVAL)
     // }
 
-    fn drop_inode(&self, _inode: &Inode) -> Result {
+    fn drop_inode(&self, _inode: &mut Inode) -> Result {
         Err(Error::EINVAL)
     }
 
@@ -578,7 +578,7 @@ pub trait SuperOperations: Send + Sync + Sized + Default {
     //     Err(Error::EINVAL)
     // }
 
-    fn statfs(&self, _root: &Dentry, _buf: &Kstatfs) -> Result {
+    fn statfs(&self, _root: &mut Dentry, _buf: &mut Kstatfs) -> Result {
         Err(Error::EINVAL)
     }
 
@@ -588,7 +588,7 @@ pub trait SuperOperations: Send + Sync + Sized + Default {
 
     // fn umount_begin(&self, _sb: &SuperBlock) {}
 
-    fn show_options(&self, _s: &SeqFile, _root: &Dentry) -> Result {
+    fn show_options(&self, _s: &mut SeqFile, _root: &mut Dentry) -> Result {
         Err(Error::EINVAL)
     }
 

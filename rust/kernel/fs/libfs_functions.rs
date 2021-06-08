@@ -2,7 +2,10 @@ use crate::bindings;
 use crate::error::Error;
 use crate::file::File;
 use crate::file_operations::SeekFrom;
+use crate::fs::dentry::Dentry;
+use crate::fs::inode::Inode;
 use crate::fs::kiocb::Kiocb;
+use crate::fs::super_operations::Kstatfs;
 use crate::iov_iter::IovIter;
 use crate::Result;
 
@@ -60,4 +63,13 @@ pub fn iter_file_splice_write(
     Error::parse_int(unsafe {
         bindings::iter_file_splice_write(pipe as *mut _, file.ptr, pos, len, flags) as _
     })
+}
+
+pub fn generic_delete_inode(inode: &mut Inode) -> Result {
+    Error::parse_int(unsafe { bindings::generic_delete_inode(inode.as_ptr_mut()) }).map(|_| ())
+}
+
+pub fn simple_statfs(root: &mut Dentry, buf: &mut Kstatfs) -> Result {
+    Error::parse_int(unsafe { bindings::simple_statfs(root.as_ptr_mut(), buf as *mut _) })
+        .map(|_| ())
 }
