@@ -70,17 +70,8 @@ impl FileSystemBase for BS2Ramfs {
     ) -> Result {
         pr_emerg!("Reached ramfs_fill_super_impl");
 
-        // sb.s_fs_info = ptr::null_mut();
-        // freed in kill_super
-        // let fsi = Box::leak(Box::try_new(RamfsFsInfo {
-        //     mount_opts: Default::default(),
-        // })?);
-        // sb.s_fs_info = fsi as *mut _ as *mut _;
-        // sb.s_op = &RAMFS_OPS as *const _ as *mut _;
-
-        // sb.s_magic = ;
+        sb.s_magic = BS2RAMFS_MAGIC;
         let ops = Bs2RamfsSuperOps::default();
-        // ops.fill(sb);
         unsafe {
             // TODO: investigate if this really has to be set to NULL in case we run out of memory
             sb.s_root = ptr::null_mut();
@@ -263,7 +254,6 @@ pub unsafe fn ramfs_get_inode<'a>(
             Mode::S_IFREG => {
                 inode.i_op = &RAMFS_FILE_INODE_OPS;
                 inode.set_file_operations::<Bs2RamfsFileOps>();
-                // inode.__bindgen_anon_3.i_fop = &RAMFS_FILE_OPS as *const _ as *mut _;
             }
             Mode::S_IFDIR => {
                 inode.i_op = &RAMFS_DIR_INODE_OPS;
