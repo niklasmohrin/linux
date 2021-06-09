@@ -17,8 +17,7 @@ use kernel::fs::{
     inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
     libfs_functions,
     super_block::SuperBlock,
-    FileSystem, FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS,
-    DEFAULT_INODE_OPERATIONS,
+    FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_INODE_OPERATIONS,
 };
 
 const PAGE_SHIFT: u32 = 12; // x86 (maybe)
@@ -55,12 +54,12 @@ impl FileSystemBase for BS2Ramfs {
         _device_name: &CStr,
         data: Option<&mut Self::MountOptions>,
     ) -> Result<*mut bindings::dentry> {
-        Self::mount_nodev(flags, data)
+        libfs_functions::mount_nodev::<Self>(flags, data)
     }
 
     fn kill_super(sb: &mut SuperBlock) {
         let _ = unsafe { Box::from_raw(mem::replace(&mut sb.s_fs_info, ptr::null_mut())) };
-        Self::kill_litter_super(sb);
+        libfs_functions::kill_litter_super(sb);
     }
 
     fn fill_super(
@@ -95,13 +94,13 @@ kernel::declare_fs_type!(BS2Ramfs, BS2RAMFS_FS_TYPE);
 impl KernelModule for BS2Ramfs {
     fn init() -> Result<Self> {
         pr_emerg!("bs2 ramfs in action");
-        Self::register().map(move |_| Self)
+        libfs_functions::register_filesystem::<Self>().map(move |_| Self)
     }
 }
 
 impl Drop for BS2Ramfs {
     fn drop(&mut self) {
-        let _ = Self::unregister();
+        let _ = libfs_functions::unregister_filesystem::<Self>();
         pr_info!("bs2 ramfs out of action");
     }
 }

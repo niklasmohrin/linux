@@ -98,60 +98,6 @@ macro_rules! declare_fs_type {
     };
 }
 
-pub trait FileSystem: FileSystemBase + DeclaredFileSystemType {
-    fn register() -> Result {
-        let err = unsafe { bindings::register_filesystem(Self::file_system_type()) };
-        if err == 0 {
-            Ok(())
-        } else {
-            Err(Error::from_kernel_errno(err))
-        }
-    }
-
-    fn unregister() -> Result {
-        let err = unsafe { bindings::unregister_filesystem(Self::file_system_type()) };
-        if err == 0 {
-            Ok(())
-        } else {
-            Err(Error::from_kernel_errno(err))
-        }
-    }
-
-    fn mount_nodev(
-        flags: c_int,
-        data: Option<&mut Self::MountOptions>,
-    ) -> Result<*mut bindings::dentry> {
-        from_kernel_err_ptr(unsafe {
-            bindings::mount_nodev(
-                Self::file_system_type(),
-                flags,
-                data.map(|p| p as *mut _ as *mut _)
-                    .unwrap_or_else(ptr::null_mut),
-                Some(Self::fill_super_raw),
-            )
-        })
-    }
-
-    // just moved here
-    // fn mount_bdev(flags: u32, dev_name: &CStr, data: Box<MountOptions>) {
-    //     bindings::mount_bdev(
-    //         Self::file_system_type(),
-    //         flags,
-    //         CStr::into_raw(dev_name),
-    //         MountOptions::into_raw(data),
-    //         self.fill_super_raw
-    //     );
-    // }
-
-    fn kill_litter_super(sb: &mut SuperBlock) {
-        unsafe {
-            bindings::kill_litter_super(sb.as_ptr_mut());
-        }
-    }
-}
-
-impl<T: FileSystemBase + DeclaredFileSystemType> FileSystem for T {}
-
 pub const DEFAULT_SUPER_OPS: bindings::super_operations = bindings::super_operations {
     statfs: None,
     drop_inode: None,

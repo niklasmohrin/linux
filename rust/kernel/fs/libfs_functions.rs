@@ -1,13 +1,18 @@
 use crate::bindings;
+use crate::c_types::*;
 use crate::error::Error;
 use crate::file::File;
 use crate::file_operations::SeekFrom;
 use crate::fs::dentry::Dentry;
+use crate::fs::from_kernel_err_ptr;
 use crate::fs::inode::Inode;
 use crate::fs::kiocb::Kiocb;
+use crate::fs::super_block::SuperBlock;
 use crate::fs::super_operations::Kstatfs;
+use crate::fs::DeclaredFileSystemType;
 use crate::iov_iter::IovIter;
 use crate::Result;
+use core::ptr;
 
 pub fn generic_file_read_iter(iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
     Error::parse_int(unsafe { bindings::generic_file_read_iter(iocb.as_ptr_mut(), iter.ptr) as _ })
@@ -72,4 +77,32 @@ pub fn generic_delete_inode(inode: &mut Inode) -> Result {
 pub fn simple_statfs(root: &mut Dentry, buf: &mut Kstatfs) -> Result {
     Error::parse_int(unsafe { bindings::simple_statfs(root.as_ptr_mut(), buf as *mut _) })
         .map(|_| ())
+}
+
+pub fn register_filesystem<T: DeclaredFileSystemType>() -> Result {
+    Error::parse_int(unsafe { bindings::register_filesystem(T::file_system_type()) }).map(|_| ())
+}
+pub fn unregister_filesystem<T: DeclaredFileSystemType>() -> Result {
+    Error::parse_int(unsafe { bindings::unregister_filesystem(T::file_system_type()) }).map(|_| ())
+}
+
+pub fn mount_nodev<T: DeclaredFileSystemType>(
+    flags: c_int,
+    data: Option<&mut T::MountOptions>,
+) -> Result<*mut bindings::dentry> {
+    from_kernel_err_ptr(unsafe {
+        bindings::mount_nodev(
+            T::file_system_type(),
+            flags,
+            data.map(|p| p as *mut _ as *mut _)
+                .unwrap_or_else(ptr::null_mut),
+            Some(T::fill_super_raw),
+        )
+    })
+}
+
+pub fn kill_litter_super(sb: &mut SuperBlock) {
+    unsafe {
+        bindings::kill_litter_super(sb.as_ptr_mut());
+    }
 }
