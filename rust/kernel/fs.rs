@@ -8,8 +8,8 @@ pub mod super_operations;
 use core::ptr;
 
 use crate::{
-    bindings, c_types::*, error::from_kernel_err_ptr, fs::super_block::SuperBlock, prelude::*,
-    ret_err_ptr, str::CStr, Result,
+    bindings, c_types::*, error::from_kernel_err_ptr, fs::super_block::SuperBlock, ret_err_ptr,
+    str::CStr, Result,
 };
 
 pub type FileSystemType = bindings::file_system_type;
@@ -30,48 +30,50 @@ pub trait FileSystemBase {
 
     fn kill_super(sb: &mut SuperBlock);
 
-    unsafe extern "C" fn mount_raw(
-        fs_type: *mut bindings::file_system_type,
-        flags: c_int,
-        device_name: *const c_char,
-        data: *mut c_void,
-    ) -> *mut bindings::dentry {
-        pr_emerg!("in mount_raw");
-        let fs_type = &mut *fs_type;
-        let device_name = CStr::from_char_ptr(device_name);
-        let data = (data as *mut Self::MountOptions).as_mut();
-        ret_err_ptr!(Self::mount(fs_type, flags, device_name, data))
-    }
-
-    unsafe extern "C" fn kill_sb_raw(sb: *mut bindings::super_block) {
-        let sb = sb
-            .as_mut()
-            .expect("FileSystemBase::kill_sb_raw got NULL super block")
-            .as_mut();
-        Self::kill_super(sb);
-    }
-
     fn fill_super(
         _sb: &mut SuperBlock,
         _data: Option<&mut Self::MountOptions>,
         _silent: c_int,
-    ) -> Result {
-        pr_emerg!("Using default FileSystem::fill_super");
-        Ok(())
-    }
+    ) -> Result;
+}
 
-    unsafe extern "C" fn fill_super_raw(
-        sb: *mut bindings::super_block,
-        data: *mut c_void,
-        silent: c_int,
-    ) -> c_int {
-        pr_emerg!("in fill_super_raw");
-        let sb = sb.as_mut().expect("SuperBlock was null").as_mut();
-        let data = (data as *mut Self::MountOptions).as_mut();
-        Self::fill_super(sb, data, silent)
-            .map(|_| 0)
-            .unwrap_or_else(|e| e.to_kernel_errno())
-    }
+// Doesn't work because we need mutable access to an associated item
+// pub struct FileSystemTypeVTable<T>(PhantomData<T>);
+// impl<T: FileSystemBase> FileSystemTypeVTable<T> {
+//     const VTABLE: bindings::file_system_type = bindings::file_system_type {
+//         name: T::NAME.as_char_ptr() as *const _,
+//         fs_flags: T::FS_FLAGS,
+//         mount: Some(mount_callback::<T>),
+//         kill_sb: Some(kill_superblock_callback::<T>),
+//         owner: T::OWNER,
+//         ..DEFAULT_FS_TYPE
+//     };
+
+//     pub const fn build() -> &'static bindings::file_system_type {
+//         &Self::VTABLE
+//     }
+// }
+
+pub unsafe extern "C" fn mount_callback<T: FileSystemBase>(
+    fs_type: *mut bindings::file_system_type,
+    flags: c_int,
+    device_name: *const c_char,
+    data: *mut c_void,
+) -> *mut bindings::dentry {
+    let fs_type = &mut *fs_type;
+    let device_name = CStr::from_char_ptr(device_name);
+    let data = (data as *mut T::MountOptions).as_mut();
+    ret_err_ptr!(T::mount(fs_type, flags, device_name, data))
+}
+
+pub unsafe extern "C" fn kill_superblock_callback<T: FileSystemBase>(
+    sb: *mut bindings::super_block,
+) {
+    let sb = sb
+        .as_mut()
+        .expect("kill_superblock got NULL super block")
+        .as_mut();
+    T::kill_super(sb);
 }
 
 pub trait DeclaredFileSystemType: FileSystemBase {
@@ -84,9 +86,9 @@ macro_rules! declare_fs_type {
         static mut $S: $crate::bindings::file_system_type = $crate::bindings::file_system_type {
             name: <$T as $crate::fs::FileSystemBase>::NAME.as_char_ptr() as *const _,
             fs_flags: <$T as $crate::fs::FileSystemBase>::FS_FLAGS,
-            mount: Some(<$T as $crate::fs::FileSystemBase>::mount_raw),
-            kill_sb: Some(<$T as $crate::fs::FileSystemBase>::kill_sb_raw),
             owner: <$T as $crate::fs::FileSystemBase>::OWNER,
+            mount: Some($crate::fs::mount_callback::<$T>),
+            kill_sb: Some($crate::fs::kill_superblock_callback::<$T>),
             ..$crate::fs::DEFAULT_FS_TYPE
         };
         impl $crate::fs::DeclaredFileSystemType for $T {

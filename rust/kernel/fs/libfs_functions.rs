@@ -8,7 +8,7 @@ use crate::{
     file_operations::SeekFrom,
     fs::{
         dentry::Dentry, from_kernel_err_ptr, inode::Inode, kiocb::Kiocb, super_block::SuperBlock,
-        super_operations::Kstatfs, DeclaredFileSystemType,
+        super_operations::Kstatfs, DeclaredFileSystemType, FileSystemBase,
     },
     iov_iter::IovIter,
     Result,
@@ -82,6 +82,7 @@ pub fn simple_statfs(root: &mut Dentry, buf: &mut Kstatfs) -> Result {
 pub fn register_filesystem<T: DeclaredFileSystemType>() -> Result {
     Error::parse_int(unsafe { bindings::register_filesystem(T::file_system_type()) }).map(|_| ())
 }
+
 pub fn unregister_filesystem<T: DeclaredFileSystemType>() -> Result {
     Error::parse_int(unsafe { bindings::unregister_filesystem(T::file_system_type()) }).map(|_| ())
 }
@@ -96,9 +97,21 @@ pub fn mount_nodev<T: DeclaredFileSystemType>(
             flags,
             data.map(|p| p as *mut _ as *mut _)
                 .unwrap_or_else(ptr::null_mut),
-            Some(T::fill_super_raw),
+            Some(fill_super_callback::<T>),
         )
     })
+}
+
+unsafe extern "C" fn fill_super_callback<T: FileSystemBase>(
+    sb: *mut bindings::super_block,
+    data: *mut c_void,
+    silent: c_int,
+) -> c_int {
+    let sb = sb.as_mut().expect("SuperBlock was null").as_mut();
+    let data = (data as *mut T::MountOptions).as_mut();
+    T::fill_super(sb, data, silent)
+        .map(|_| 0)
+        .unwrap_or_else(|e| e.to_kernel_errno())
 }
 
 pub fn kill_litter_super(sb: &mut SuperBlock) {
