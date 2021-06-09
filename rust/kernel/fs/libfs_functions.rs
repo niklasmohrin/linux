@@ -1,18 +1,18 @@
-use crate::bindings;
-use crate::c_types::*;
-use crate::error::Error;
-use crate::file::File;
-use crate::file_operations::SeekFrom;
-use crate::fs::dentry::Dentry;
-use crate::fs::from_kernel_err_ptr;
-use crate::fs::inode::Inode;
-use crate::fs::kiocb::Kiocb;
-use crate::fs::super_block::SuperBlock;
-use crate::fs::super_operations::Kstatfs;
-use crate::fs::DeclaredFileSystemType;
-use crate::iov_iter::IovIter;
-use crate::Result;
 use core::ptr;
+
+use crate::{
+    bindings,
+    c_types::*,
+    error::Error,
+    file::File,
+    file_operations::SeekFrom,
+    fs::{
+        dentry::Dentry, from_kernel_err_ptr, inode::Inode, kiocb::Kiocb, super_block::SuperBlock,
+        super_operations::Kstatfs, DeclaredFileSystemType,
+    },
+    iov_iter::IovIter,
+    Result,
+};
 
 pub fn generic_file_read_iter(iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
     Error::parse_int(unsafe { bindings::generic_file_read_iter(iocb.as_ptr_mut(), iter.ptr) as _ })

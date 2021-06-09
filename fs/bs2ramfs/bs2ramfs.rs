@@ -4,20 +4,24 @@
 use alloc::boxed::Box;
 use core::{mem, ptr};
 
-use kernel::file::File;
-use kernel::file_operations::{FileOperations, SeekFrom};
-use kernel::fs::kiocb::Kiocb;
-use kernel::fs::super_operations::{Kstatfs, SeqFile, SuperOperations};
-use kernel::iov_iter::IovIter;
-use kernel::{bindings, c_types::*, prelude::*, str::CStr, Error, Mode};
-
-// should be renamed at some point
-use kernel::fs::{
-    dentry::Dentry,
-    inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
-    libfs_functions,
-    super_block::SuperBlock,
-    FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_INODE_OPERATIONS,
+use kernel::{
+    bindings,
+    c_types::*,
+    file::File,
+    file_operations::{FileOperations, SeekFrom},
+    fs::{
+        dentry::Dentry,
+        inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
+        kiocb::Kiocb,
+        libfs_functions,
+        super_block::SuperBlock,
+        super_operations::{Kstatfs, SeqFile, SuperOperations},
+        FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_INODE_OPERATIONS,
+    },
+    iov_iter::IovIter,
+    prelude::*,
+    str::CStr,
+    Error, Mode,
 };
 
 const PAGE_SHIFT: u32 = 12; // x86 (maybe)
