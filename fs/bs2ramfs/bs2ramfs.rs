@@ -78,9 +78,9 @@ impl FileSystemBase for BS2Ramfs {
         unsafe {
             // TODO: investigate if this really has to be set to NULL in case we run out of memory
             sb.s_root = ptr::null_mut();
-            let inode = ramfs_get_inode(sb, None, Mode::S_IFDIR | ops.mount_opts.mode, 0);
-            pr_emerg!("Completed ramfs_fill_super_impl::get_inode");
-            sb.s_root = inode.and_then(Dentry::make_root).ok_or(Error::ENOMEM)? as *mut _ as *mut _;
+            sb.s_root = ramfs_get_inode(sb, None, Mode::S_IFDIR | ops.mount_opts.mode, 0)
+                .and_then(Dentry::make_root)
+                .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
         }
         pr_emerg!("(rust) s_root: {:?}", sb.s_root);
         sb.set_super_operations(ops);
