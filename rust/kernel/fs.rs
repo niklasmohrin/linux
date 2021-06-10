@@ -32,10 +32,33 @@ pub trait FileSystemBase {
     fn kill_super(sb: &mut SuperBlock);
 
     fn fill_super(
-        _sb: &mut SuperBlock,
-        _data: Option<&mut Self::MountOptions>,
-        _silent: c_int,
+        sb: &mut SuperBlock,
+        data: Option<&mut Self::MountOptions>,
+        silent: c_int,
     ) -> Result;
+}
+
+pub trait DeclaredFileSystemType: FileSystemBase {
+    fn file_system_type() -> *mut bindings::file_system_type;
+}
+
+#[macro_export]
+macro_rules! declare_fs_type {
+    ($T:ty, $S:ident) => {
+        static mut $S: $crate::bindings::file_system_type = $crate::bindings::file_system_type {
+            name: <$T as $crate::fs::FileSystemBase>::NAME.as_char_ptr() as *const _,
+            fs_flags: <$T as $crate::fs::FileSystemBase>::FS_FLAGS,
+            owner: <$T as $crate::fs::FileSystemBase>::OWNER,
+            mount: Some($crate::fs::mount_callback::<$T>),
+            kill_sb: Some($crate::fs::kill_superblock_callback::<$T>),
+            ..$crate::fs::DEFAULT_FS_TYPE
+        };
+        impl $crate::fs::DeclaredFileSystemType for $T {
+            fn file_system_type() -> *mut $crate::bindings::file_system_type {
+                unsafe { &mut $S as *mut _ }
+            }
+        }
+    };
 }
 
 // Doesn't work because we need mutable access to an associated item
@@ -77,58 +100,6 @@ pub unsafe extern "C" fn kill_superblock_callback<T: FileSystemBase>(
     T::kill_super(sb);
 }
 
-pub trait DeclaredFileSystemType: FileSystemBase {
-    fn file_system_type() -> *mut bindings::file_system_type;
-}
-
-#[macro_export]
-macro_rules! declare_fs_type {
-    ($T:ty, $S:ident) => {
-        static mut $S: $crate::bindings::file_system_type = $crate::bindings::file_system_type {
-            name: <$T as $crate::fs::FileSystemBase>::NAME.as_char_ptr() as *const _,
-            fs_flags: <$T as $crate::fs::FileSystemBase>::FS_FLAGS,
-            owner: <$T as $crate::fs::FileSystemBase>::OWNER,
-            mount: Some($crate::fs::mount_callback::<$T>),
-            kill_sb: Some($crate::fs::kill_superblock_callback::<$T>),
-            ..$crate::fs::DEFAULT_FS_TYPE
-        };
-        impl $crate::fs::DeclaredFileSystemType for $T {
-            fn file_system_type() -> *mut $crate::bindings::file_system_type {
-                unsafe { &mut $S as *mut _ }
-            }
-        }
-    };
-}
-
-pub const DEFAULT_SUPER_OPS: bindings::super_operations = bindings::super_operations {
-    statfs: None,
-    drop_inode: None,
-    show_options: None,
-    alloc_inode: None,
-    destroy_inode: None,
-    dirty_inode: None,
-    write_inode: None,
-    evict_inode: None,
-    put_super: None,
-    sync_fs: None,
-    freeze_super: None,
-    freeze_fs: None,
-    thaw_super: None,
-    unfreeze_fs: None,
-    remount_fs: None,
-    umount_begin: None,
-    show_devname: None,
-    show_path: None,
-    show_stats: None,
-    quota_read: None,
-    free_inode: None,
-    quota_write: None,
-    get_dquots: None,
-    bdev_try_to_free_page: None,
-    nr_cached_objects: None,
-    free_cached_objects: None,
-};
-
 pub const DEFAULT_ADDRESS_SPACE_OPERATIONS: bindings::address_space_operations =
     bindings::address_space_operations {
         readpage: None,
@@ -155,30 +126,6 @@ pub const DEFAULT_ADDRESS_SPACE_OPERATIONS: bindings::address_space_operations =
         swap_deactivate: None,
     };
 
-pub const DEFAULT_INODE_OPERATIONS: bindings::inode_operations = bindings::inode_operations {
-    create: None,
-    lookup: None,
-    link: None,
-    unlink: None,
-    symlink: None,
-    mkdir: None,
-    rmdir: None,
-    mknod: None,
-    rename: None,
-    listxattr: None,
-    fiemap: None,
-    update_time: None,
-    tmpfile: None,
-    set_acl: None,
-    get_link: None,
-    permission: None,
-    get_acl: None,
-    readlink: None,
-    setattr: None,
-    getattr: None,
-    atomic_open: None,
-};
-
 pub const DEFAULT_FS_TYPE: bindings::file_system_type = bindings::file_system_type {
     name: ptr::null(),
     fs_flags: 0,
@@ -198,39 +145,4 @@ pub const DEFAULT_FS_TYPE: bindings::file_system_type = bindings::file_system_ty
     i_lock_key: bindings::lock_class_key {},
     i_mutex_key: bindings::lock_class_key {},
     i_mutex_dir_key: bindings::lock_class_key {},
-};
-
-pub const DEFAULT_FILE_OPERATIONS: bindings::file_operations = bindings::file_operations {
-    owner: ptr::null_mut(),
-    llseek: None,
-    read: None,
-    write: None,
-    read_iter: None,
-    write_iter: None,
-    iopoll: None,
-    iterate: None,
-    iterate_shared: None,
-    poll: None,
-    unlocked_ioctl: None,
-    compat_ioctl: None,
-    mmap: None,
-    mmap_supported_flags: 0,
-    open: None,
-    flush: None,
-    release: None,
-    fsync: None,
-    fasync: None,
-    lock: None,
-    sendpage: None,
-    get_unmapped_area: None,
-    check_flags: None,
-    flock: None,
-    splice_write: None,
-    splice_read: None,
-    setlease: None,
-    fallocate: None,
-    show_fdinfo: None,
-    copy_file_range: None,
-    remap_file_range: None,
-    fadvise: None,
 };
