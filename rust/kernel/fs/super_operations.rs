@@ -70,12 +70,14 @@ pub type Kstatfs = bindings::kstatfs;
 unsafe extern "C" fn drop_inode_callback<T: SuperOperations>(
     inode: *mut bindings::inode,
 ) -> c_types::c_int {
-    let sb = (*inode).i_sb as *const bindings::super_block;
-    let s_ops = &*((*sb).s_fs_info as *const T);
-    let inode = inode.as_mut().expect("drop_inode got null inode").as_mut();
-    from_kernel_result! {
-        s_ops.drop_inode(inode)?;
-        Ok(0)
+    unsafe {
+        let sb = (*inode).i_sb as *const bindings::super_block;
+        let s_ops = &*((*sb).s_fs_info as *const T);
+        let inode = inode.as_mut().expect("drop_inode got null inode").as_mut();
+        from_kernel_result! {
+            s_ops.drop_inode(inode)?;
+            Ok(0)
+        }
     }
 }
 
@@ -151,10 +153,12 @@ unsafe extern "C" fn statfs_callback<T: SuperOperations>(
     buf: *mut bindings::kstatfs,
 ) -> c_types::c_int {
     from_kernel_result! {
-        let sb = (*root).d_sb as *const bindings::super_block;
-        let s_ops = &*((*sb).s_fs_info as *const T);
-        s_ops.statfs(root.as_mut().expect("Statfs got null dentry").as_mut(), &mut *buf)?;
-        Ok(0)
+        unsafe {
+            let sb = (*root).d_sb as *const bindings::super_block;
+            let s_ops = &*((*sb).s_fs_info as *const T);
+            s_ops.statfs(root.as_mut().expect("Statfs got null dentry").as_mut(), &mut *buf)?;
+            Ok(0)
+        }
     }
 }
 
@@ -186,10 +190,12 @@ unsafe extern "C" fn show_options_callback<T: SuperOperations>(
     root: *mut bindings::dentry,
 ) -> c_types::c_int {
     from_kernel_result! {
-        let sb = (*root).d_sb as *const bindings::super_block;
-        let s_ops = &*((*sb).s_fs_info as *const T);
-        s_ops.show_options(&mut *s, root.as_mut().expect("show_options got null dentry").as_mut())?;
-        Ok(0)
+        unsafe {
+            let sb = (*root).d_sb as *const bindings::super_block;
+            let s_ops = &*((*sb).s_fs_info as *const T);
+            s_ops.show_options(&mut *s, root.as_mut().expect("show_options got null dentry").as_mut())?;
+            Ok(0)
+        }
     }
 }
 

@@ -124,11 +124,13 @@ unsafe extern "C" fn read_iter_callback<T: FileOperations>(
     raw_iter: *mut bindings::iov_iter,
 ) -> isize {
     from_kernel_result! {
-        let mut iter = IovIter::from_ptr(raw_iter);
-        let file = (*iocb).ki_filp;
-        let f = &*((*file).private_data as *const T);
-        let read = f.read_iter(iocb.as_mut().unwrap().as_mut(), &mut iter)?;
-        Ok(read as _)
+        unsafe {
+            let mut iter = IovIter::from_ptr(raw_iter);
+            let file = (*iocb).ki_filp;
+            let f = &*((*file).private_data as *const T);
+            let read = f.read_iter(iocb.as_mut().unwrap().as_mut(), &mut iter)?;
+            Ok(read as _)
+        }
     }
 }
 
@@ -154,11 +156,13 @@ unsafe extern "C" fn write_iter_callback<T: FileOperations>(
     raw_iter: *mut bindings::iov_iter,
 ) -> isize {
     from_kernel_result! {
-        let mut iter = IovIter::from_ptr(raw_iter);
-        let file = (*iocb).ki_filp;
-        let f = &*((*file).private_data as *const T);
-        let written = f.write_iter(iocb.as_mut().unwrap().as_mut(), &mut iter)?;
-        Ok(written as _)
+        unsafe {
+            let mut iter = IovIter::from_ptr(raw_iter);
+            let file = (*iocb).ki_filp;
+            let f = &*((*file).private_data as *const T);
+            let written = f.write_iter(iocb.as_mut().unwrap().as_mut(), &mut iter)?;
+            Ok(written as _)
+        }
     }
 }
 
@@ -254,8 +258,8 @@ unsafe extern "C" fn get_unmapped_area_callback<T: FileOperations>(
     flags: c_types::c_ulong,
 ) -> c_types::c_ulong {
     let ret: i64 = from_kernel_result! {
-        let f = &*((*file).private_data as *const T);
-        let res = f.get_unmapped_area(&FileRef::from_ptr(file), addr, len, pgoff, flags)?;
+        let f = unsafe { &*((*file).private_data as *const T) };
+        let res = f.get_unmapped_area(unsafe { &FileRef::from_ptr(file) }, addr, len, pgoff, flags)?;
         Ok(res as _)
     };
     ret as _
@@ -282,9 +286,11 @@ unsafe extern "C" fn splice_read_callback<T: FileOperations>(
     flags: c_types::c_uint,
 ) -> c_types::c_ssize_t {
     from_kernel_result! {
-        let f = &*((*file).private_data as *const T);
-        let ret = f.splice_read(&FileRef::from_ptr(file), ppos, &mut *pipe, len, flags)?;
-        Ok(ret as _)
+        unsafe {
+            let f = &*((*file).private_data as *const T);
+            let ret = f.splice_read(&FileRef::from_ptr(file), ppos, &mut *pipe, len, flags)?;
+            Ok(ret as _)
+        }
     }
 }
 
@@ -295,10 +301,12 @@ unsafe extern "C" fn splice_write_callback<T: FileOperations>(
     len: c_types::c_size_t,
     flags: c_types::c_uint,
 ) -> c_types::c_ssize_t {
-    from_kernel_result! {
-        let f = &*((*file).private_data as *const T);
-        let ret = f.splice_write(&mut *pipe, &FileRef::from_ptr(file), ppos, len, flags)?;
-        Ok(ret as _)
+    unsafe {
+        from_kernel_result! {
+            let f = &*((*file).private_data as *const T);
+            let ret = f.splice_write(&mut *pipe, &FileRef::from_ptr(file), ppos, len, flags)?;
+            Ok(ret as _)
+        }
     }
 }
 

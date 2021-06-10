@@ -118,11 +118,13 @@ unsafe extern "C" fn setattr_callback<T: InodeOperations>(
     dentry: *mut bindings::dentry,
     iattr: *mut bindings::iattr,
 ) -> c_types::c_int {
-    let dentry = dentry.as_mut().expect("setattr got null dentry").as_mut();
-    let inode = dentry.d_inode; // use d_inode method instead?
-    let i_ops = &*((*inode).i_private as *const T);
-    from_kernel_result! {
-        i_ops.setattr(&mut (*mnt_userns), dentry, &mut (*iattr)).map(|()| 0)
+    unsafe {
+        let dentry = dentry.as_mut().expect("setattr got null dentry").as_mut();
+        let inode = dentry.d_inode; // use d_inode method instead?
+        let i_ops = &*((*inode).i_private as *const T);
+        from_kernel_result! {
+            i_ops.setattr(&mut (*mnt_userns), dentry, &mut (*iattr)).map(|()| 0)
+        }
     }
 }
 
@@ -133,11 +135,13 @@ unsafe extern "C" fn getattr_callback<T: InodeOperations>(
     request_mask: u32,
     query_flags: u32,
 ) -> c_types::c_int {
-    let dentry = (*path).dentry;
-    let inode = (*dentry).d_inode; // use d_inode method instead?
-    let i_ops = &*((*inode).i_private as *const T);
-    from_kernel_result! {
-        i_ops.getattr(&mut (*mnt_userns), &(*path), &mut (*stat), request_mask, query_flags).map(|()| 0)
+    unsafe {
+        let dentry = (*path).dentry;
+        let inode = (*dentry).d_inode; // use d_inode method instead?
+        let i_ops = &*((*inode).i_private as *const T);
+        from_kernel_result! {
+            i_ops.getattr(&mut (*mnt_userns), &(*path), &mut (*stat), request_mask, query_flags).map(|()| 0)
+        }
     }
 }
 
@@ -148,11 +152,13 @@ unsafe extern "C" fn create_callback<T: InodeOperations>(
     mode: ModeInt,
     excl: bool,
 ) -> c_types::c_int {
-    let dir = dir.as_mut().expect("create got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let dentry = dentry.as_mut().expect("create got null dentry").as_mut();
-    from_kernel_result! {
-        i_ops.create(&mut (*mnt_userns), dir, dentry, Mode::from_int(mode), excl).map(|()| 0)
+    unsafe {
+        let dir = dir.as_mut().expect("create got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let dentry = dentry.as_mut().expect("create got null dentry").as_mut();
+        from_kernel_result! {
+            i_ops.create(&mut (*mnt_userns), dir, dentry, Mode::from_int(mode), excl).map(|()| 0)
+        }
     }
 }
 unsafe extern "C" fn lookup_callback<T: InodeOperations>(
@@ -160,36 +166,42 @@ unsafe extern "C" fn lookup_callback<T: InodeOperations>(
     dentry: *mut bindings::dentry,
     flags: c_types::c_uint,
 ) -> *mut bindings::dentry {
-    let dir = dir.as_mut().expect("lookup got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let dentry = dentry.as_mut().expect("lookup got null dentry").as_mut();
-    ret_err_ptr!(i_ops.lookup(dir, dentry, flags).map(|p| p as *mut _))
+    unsafe {
+        let dir = dir.as_mut().expect("lookup got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let dentry = dentry.as_mut().expect("lookup got null dentry").as_mut();
+        ret_err_ptr!(i_ops.lookup(dir, dentry, flags).map(|p| p as *mut _))
+    }
 }
 unsafe extern "C" fn link_callback<T: InodeOperations>(
     old_dentry: *mut bindings::dentry,
     dir: *mut bindings::inode,
     dentry: *mut bindings::dentry,
 ) -> c_types::c_int {
-    let dir = dir.as_mut().expect("link got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let old_dentry = old_dentry
-        .as_mut()
-        .expect("link got null old_dentry")
-        .as_mut();
-    let dentry = dentry.as_mut().expect("link got null dentry").as_mut();
-    from_kernel_result! {
-        i_ops.link(old_dentry, dir, dentry).map(|()| 0)
+    unsafe {
+        let dir = dir.as_mut().expect("link got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let old_dentry = old_dentry
+            .as_mut()
+            .expect("link got null old_dentry")
+            .as_mut();
+        let dentry = dentry.as_mut().expect("link got null dentry").as_mut();
+        from_kernel_result! {
+            i_ops.link(old_dentry, dir, dentry).map(|()| 0)
+        }
     }
 }
 unsafe extern "C" fn unlink_callback<T: InodeOperations>(
     dir: *mut bindings::inode,
     dentry: *mut bindings::dentry,
 ) -> c_types::c_int {
-    let dir = dir.as_mut().expect("unlink got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let dentry = dentry.as_mut().expect("unlink got null dentry").as_mut();
-    from_kernel_result! {
-        i_ops.unlink(dir, dentry).map(|()| 0)
+    unsafe {
+        let dir = dir.as_mut().expect("unlink got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let dentry = dentry.as_mut().expect("unlink got null dentry").as_mut();
+        from_kernel_result! {
+            i_ops.unlink(dir, dentry).map(|()| 0)
+        }
     }
 }
 unsafe extern "C" fn symlink_callback<T: InodeOperations>(
@@ -198,11 +210,13 @@ unsafe extern "C" fn symlink_callback<T: InodeOperations>(
     dentry: *mut bindings::dentry,
     symname: *const c_types::c_char,
 ) -> c_types::c_int {
-    let dir = dir.as_mut().expect("symlink got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let dentry = dentry.as_mut().expect("symlink got null dentry").as_mut();
-    from_kernel_result! {
-        i_ops.symlink(&mut (*mnt_userns), dir, dentry, CStr::from_char_ptr(symname)).map(|()| 0)
+    unsafe {
+        let dir = dir.as_mut().expect("symlink got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let dentry = dentry.as_mut().expect("symlink got null dentry").as_mut();
+        from_kernel_result! {
+            i_ops.symlink(&mut (*mnt_userns), dir, dentry, CStr::from_char_ptr(symname)).map(|()| 0)
+        }
     }
 }
 unsafe extern "C" fn mkdir_callback<T: InodeOperations>(
@@ -211,22 +225,26 @@ unsafe extern "C" fn mkdir_callback<T: InodeOperations>(
     dentry: *mut bindings::dentry,
     mode: ModeInt,
 ) -> c_types::c_int {
-    let dir = dir.as_mut().expect("mkdir got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let dentry = dentry.as_mut().expect("mkdir got null dentry").as_mut();
-    from_kernel_result! {
-        i_ops.mkdir(&mut (*mnt_userns), dir, dentry, Mode::from_int(mode)).map(|()| 0) // todo: mode_t is u32 but u16 in Mode?
+    unsafe {
+        let dir = dir.as_mut().expect("mkdir got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let dentry = dentry.as_mut().expect("mkdir got null dentry").as_mut();
+        from_kernel_result! {
+            i_ops.mkdir(&mut (*mnt_userns), dir, dentry, Mode::from_int(mode)).map(|()| 0) // todo: mode_t is u32 but u16 in Mode?
+        }
     }
 }
 unsafe extern "C" fn rmdir_callback<T: InodeOperations>(
     dir: *mut bindings::inode,
     dentry: *mut bindings::dentry,
 ) -> c_types::c_int {
-    let dir = dir.as_mut().expect("rmdir got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let dentry = dentry.as_mut().expect("rmdir got null dentry").as_mut();
-    from_kernel_result! {
-        i_ops.rmdir(dir, dentry).map(|()| 0)
+    unsafe {
+        let dir = dir.as_mut().expect("rmdir got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let dentry = dentry.as_mut().expect("rmdir got null dentry").as_mut();
+        from_kernel_result! {
+            i_ops.rmdir(dir, dentry).map(|()| 0)
+        }
     }
 }
 unsafe extern "C" fn mknod_callback<T: InodeOperations>(
@@ -236,11 +254,13 @@ unsafe extern "C" fn mknod_callback<T: InodeOperations>(
     mode: ModeInt,
     dev: bindings::dev_t,
 ) -> c_types::c_int {
-    let dir = dir.as_mut().expect("mknod got null dir").as_mut();
-    let i_ops = &*(dir.i_private as *const T);
-    let dentry = dentry.as_mut().expect("mknod got null dentry").as_mut();
-    from_kernel_result! {
-        i_ops.mknod(&mut (*mnt_userns), dir, dentry, Mode::from_int(mode), dev).map(|()| 0)
+    unsafe {
+        let dir = dir.as_mut().expect("mknod got null dir").as_mut();
+        let i_ops = &*(dir.i_private as *const T);
+        let dentry = dentry.as_mut().expect("mknod got null dentry").as_mut();
+        from_kernel_result! {
+            i_ops.mknod(&mut (*mnt_userns), dir, dentry, Mode::from_int(mode), dev).map(|()| 0)
+        }
     }
 }
 unsafe extern "C" fn rename_callback<T: InodeOperations>(
@@ -251,19 +271,21 @@ unsafe extern "C" fn rename_callback<T: InodeOperations>(
     new_dentry: *mut bindings::dentry,
     flags: c_types::c_uint,
 ) -> c_types::c_int {
-    let old_dir = old_dir.as_mut().expect("rename got null dir").as_mut();
-    let i_ops = &*(old_dir.i_private as *const T);
-    let old_dentry = old_dentry
-        .as_mut()
-        .expect("rename got null dentry")
-        .as_mut();
-    let new_dir = new_dir.as_mut().expect("rename got null dir").as_mut();
-    let new_dentry = new_dentry
-        .as_mut()
-        .expect("rename got null dentry")
-        .as_mut();
-    from_kernel_result! {
-        i_ops.rename(&mut (*mnt_userns), old_dir, old_dentry, new_dir, new_dentry, flags).map(|()| 0)
+    unsafe {
+        let old_dir = old_dir.as_mut().expect("rename got null dir").as_mut();
+        let i_ops = &*(old_dir.i_private as *const T);
+        let old_dentry = old_dentry
+            .as_mut()
+            .expect("rename got null dentry")
+            .as_mut();
+        let new_dir = new_dir.as_mut().expect("rename got null dir").as_mut();
+        let new_dentry = new_dentry
+            .as_mut()
+            .expect("rename got null dentry")
+            .as_mut();
+        from_kernel_result! {
+            i_ops.rename(&mut (*mnt_userns), old_dir, old_dentry, new_dir, new_dentry, flags).map(|()| 0)
+        }
     }
 }
 
@@ -336,6 +358,8 @@ impl<T: InodeOperations> InodeOperationsVtable<T> {
         atomic_open: None,
         tmpfile: None,
         set_acl: None,
+        fileattr_get: None,
+        fileattr_set: None,
     };
 
     /// Builds an instance of [`struct inode_operations`].

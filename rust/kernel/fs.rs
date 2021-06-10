@@ -84,20 +84,24 @@ pub unsafe extern "C" fn mount_callback<T: FileSystemBase>(
     device_name: *const c_char,
     data: *mut c_void,
 ) -> *mut bindings::dentry {
-    let fs_type = &mut *fs_type;
-    let device_name = CStr::from_char_ptr(device_name);
-    let data = (data as *mut T::MountOptions).as_mut();
-    ret_err_ptr!(T::mount(fs_type, flags, device_name, data))
+    unsafe {
+        let fs_type = &mut *fs_type;
+        let device_name = CStr::from_char_ptr(device_name);
+        let data = (data as *mut T::MountOptions).as_mut();
+        ret_err_ptr!(T::mount(fs_type, flags, device_name, data))
+    }
 }
 
 pub unsafe extern "C" fn kill_superblock_callback<T: FileSystemBase>(
     sb: *mut bindings::super_block,
 ) {
-    let sb = sb
-        .as_mut()
-        .expect("kill_superblock got NULL super block")
-        .as_mut();
-    T::kill_super(sb);
+    unsafe {
+        let sb = sb
+            .as_mut()
+            .expect("kill_superblock got NULL super block")
+            .as_mut();
+        T::kill_super(sb);
+    }
 }
 
 pub const DEFAULT_ADDRESS_SPACE_OPERATIONS: bindings::address_space_operations =

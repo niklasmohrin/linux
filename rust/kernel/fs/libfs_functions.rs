@@ -199,11 +199,13 @@ unsafe extern "C" fn fill_super_callback<T: FileSystemBase>(
     data: *mut c_void,
     silent: c_int,
 ) -> c_int {
-    let sb = sb.as_mut().expect("SuperBlock was null").as_mut();
-    let data = (data as *mut T::MountOptions).as_mut();
-    T::fill_super(sb, data, silent)
-        .map(|_| 0)
-        .unwrap_or_else(|e| e.to_kernel_errno())
+    unsafe {
+        let sb = sb.as_mut().expect("SuperBlock was null").as_mut();
+        let data = (data as *mut T::MountOptions).as_mut();
+        T::fill_super(sb, data, silent)
+            .map(|_| 0)
+            .unwrap_or_else(|e| e.to_kernel_errno())
+    }
 }
 
 pub fn kill_litter_super(sb: &mut SuperBlock) {
