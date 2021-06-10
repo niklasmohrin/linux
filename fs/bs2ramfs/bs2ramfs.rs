@@ -12,15 +12,17 @@ use kernel::{
     fs::{
         dentry::Dentry,
         inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
+        inode_operations::InodeOperations,
         kiocb::Kiocb,
         libfs_functions,
         super_block::SuperBlock,
         super_operations::{Kstatfs, SeqFile, SuperOperations},
-        FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS, DEFAULT_INODE_OPERATIONS,
+        FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS,
     },
     iov_iter::IovIter,
     prelude::*,
     str::CStr,
+    types::{Dev, Iattr, Kstat, Path, UserNamespace},
     Error, Mode,
 };
 
@@ -119,14 +121,6 @@ impl Default for RamfsMountOpts {
             mode: Mode::from_int(0o775),
         }
     }
-}
-
-unsafe extern "C" fn ramfs_show_options(
-    _m: *mut bindings::seq_file,
-    _root: *mut bindings::dentry,
-) -> c_int {
-    pr_emerg!("ramfs show options, doing nothing");
-    0
 }
 
 #[derive(Default)]
@@ -231,14 +225,148 @@ static RAMFS_AOPS: bindings::address_space_operations = bindings::address_space_
     ..DEFAULT_ADDRESS_SPACE_OPERATIONS
 };
 
-static RAMFS_FILE_INODE_OPS: bindings::inode_operations = bindings::inode_operations {
-    setattr: Some(bindings::simple_setattr),
-    getattr: Some(bindings::simple_getattr),
-    ..DEFAULT_INODE_OPERATIONS
-};
+#[derive(Default)]
+struct Bs2RamfsFileInodeOps;
 
-#[no_mangle]
-pub unsafe fn ramfs_get_inode<'a>(
+impl InodeOperations for Bs2RamfsFileInodeOps {
+    kernel::declare_inode_operations!(setattr, getattr);
+
+    fn setattr(
+        &self,
+        mnt_userns: &mut UserNamespace,
+        dentry: &mut Dentry,
+        iattr: &mut Iattr,
+    ) -> Result {
+        libfs_functions::simple_setattr(mnt_userns, dentry, iattr)
+    }
+
+    fn getattr(
+        &self,
+        mnt_userns: &mut UserNamespace,
+        path: &Path,
+        stat: &mut Kstat,
+        request_mask: u32,
+        query_flags: u32,
+    ) -> Result {
+        libfs_functions::simple_getattr(mnt_userns, path, stat, request_mask, query_flags)
+    }
+}
+
+#[derive(Default)]
+struct Bs2RamfsDirInodeOps;
+
+impl InodeOperations for Bs2RamfsDirInodeOps {
+    kernel::declare_inode_operations!(
+        create, lookup, link, unlink, symlink, mkdir, rmdir, mknod, rename
+    );
+
+    fn create(
+        &self,
+        mnt_userns: &mut UserNamespace,
+        dir: &mut Inode,
+        dentry: &mut Dentry,
+        mode: Mode,
+        _excl: bool,
+    ) -> Result {
+        pr_emerg!("enter create");
+        self.mknod(mnt_userns, dir, dentry, mode | Mode::S_IFREG, 0)
+    }
+
+    fn lookup(&self, dir: &mut Inode, dentry: &mut Dentry, flags: c_uint) -> Result<*mut Dentry> {
+        pr_emerg!("enter lookup");
+        libfs_functions::simple_lookup(dir, dentry, flags) // niklas: This returns 0, but it does so on main too, so it's not the problem
+    }
+
+    fn link(&self, old_dentry: &mut Dentry, dir: &mut Inode, dentry: &mut Dentry) -> Result {
+        libfs_functions::simple_link(old_dentry, dir, dentry)
+    }
+
+    fn unlink(&self, dir: &mut Inode, dentry: &mut Dentry) -> Result {
+        libfs_functions::simple_unlink(dir, dentry)
+    }
+
+    fn symlink(
+        &self,
+        _mnt_userns: &mut UserNamespace,
+        dir: &mut Inode,
+        dentry: &mut Dentry,
+        symname: &'static CStr,
+    ) -> Result {
+        let inode = ramfs_get_inode(
+            unsafe { dir.i_sb.as_mut().unwrap().as_mut() },
+            Some(dir),
+            Mode::S_IFLNK | Mode::S_IRWXUGO,
+            0,
+        )
+        .ok_or(Error::ENOSPC)?;
+
+        if let Err(e) = libfs_functions::page_symlink(inode, symname) {
+            inode.put();
+            return Err(e);
+        }
+
+        dentry.instantiate(inode);
+        dentry.get();
+        dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
+        Ok(())
+    }
+
+    fn mkdir(
+        &self,
+        mnt_userns: &mut UserNamespace,
+        dir: &mut Inode,
+        dentry: &mut Dentry,
+        mode: Mode,
+    ) -> Result {
+        pr_emerg!("enter mkdir");
+        if let Err(_) = self.mknod(mnt_userns, dir, dentry, mode | Mode::S_IFDIR, 0) {
+            pr_emerg!("mkdir: inc_nlink");
+            dir.inc_nlink();
+        }
+        Ok(())
+    }
+
+    fn rmdir(&self, dir: &mut Inode, dentry: &mut Dentry) -> Result {
+        libfs_functions::simple_rmdir(dir, dentry)
+    }
+
+    fn mknod(
+        &self,
+        _mnt_userns: &mut UserNamespace,
+        dir: &mut Inode,
+        dentry: &mut Dentry,
+        mode: Mode,
+        dev: Dev,
+    ) -> Result {
+        // todo: write some kind of wrapper
+        ramfs_get_inode(
+            unsafe { dir.i_sb.as_mut().unwrap().as_mut() },
+            Some(dir),
+            mode,
+            dev,
+        )
+        .ok_or(Error::ENOSPC)
+        .map(|inode| {
+            dentry.instantiate(inode);
+            dentry.get();
+            dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
+            ()
+        })
+    }
+    fn rename(
+        &self,
+        mnt_userns: &mut UserNamespace,
+        old_dir: &mut Inode,
+        old_dentry: &mut Dentry,
+        new_dir: &mut Inode,
+        new_dentry: &mut Dentry,
+        flags: c_uint,
+    ) -> Result {
+        libfs_functions::simple_rename(mnt_userns, old_dir, old_dentry, new_dir, new_dentry, flags)
+    }
+}
+
+pub fn ramfs_get_inode<'a>(
     sb: &'a mut SuperBlock,
     dir: Option<&'_ mut Inode>,
     mode: Mode,
@@ -246,25 +374,31 @@ pub unsafe fn ramfs_get_inode<'a>(
 ) -> Option<&'a mut Inode> {
     Inode::new(sb).map(|inode| {
         inode.i_ino = Inode::next_ino() as _;
-        inode.init_owner(&mut bindings::init_user_ns, dir, mode);
+        inode.init_owner(unsafe { &mut bindings::init_user_ns }, dir, mode);
 
-        (*inode.i_mapping).a_ops = &RAMFS_AOPS;
-        rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
-        rust_helper_mapping_set_unevictable(inode.i_mapping);
+        unsafe { (*inode.i_mapping).a_ops = &RAMFS_AOPS };
+        unsafe {
+            rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
+        }
+        unsafe {
+            rust_helper_mapping_set_unevictable(inode.i_mapping);
+        }
 
         inode.update_acm_time(UpdateATime::Yes, UpdateCTime::Yes, UpdateMTime::Yes);
         match mode & Mode::S_IFMT {
             Mode::S_IFREG => {
-                inode.i_op = &RAMFS_FILE_INODE_OPS;
+                inode.set_inode_operations(Bs2RamfsFileInodeOps);
                 inode.set_file_operations::<Bs2RamfsFileOps>();
             }
             Mode::S_IFDIR => {
-                inode.i_op = &RAMFS_DIR_INODE_OPS;
-                inode.__bindgen_anon_3.i_fop = &bindings::simple_dir_operations;
+                inode.set_inode_operations(Bs2RamfsDirInodeOps);
+                unsafe { inode.__bindgen_anon_3.i_fop = &bindings::simple_dir_operations }; // todo: write wrapper function
+                                                                                            // inode.i_op = &RAMFS_DIR_INODE_OPS;
+                                                                                            // inode.__bindgen_anon_3.i_fop = &bindings::simple_dir_operations;
                 inode.inc_nlink();
             }
             Mode::S_IFLNK => {
-                inode.i_op = &bindings::page_symlink_inode_operations;
+                unsafe { inode.i_op = &bindings::page_symlink_inode_operations };
                 inode.nohighmem();
             }
             _ => {
@@ -275,131 +409,3 @@ pub unsafe fn ramfs_get_inode<'a>(
         inode
     })
 }
-
-unsafe extern "C" fn ramfs_mknod(
-    _ns: *mut bindings::user_namespace,
-    dir: *mut bindings::inode,
-    dentry: *mut bindings::dentry,
-    mode: bindings::umode_t,
-    dev: bindings::dev_t,
-) -> i32 {
-    let dir = dir
-        .as_mut()
-        .expect("ramfs_mknod got NULL directory")
-        .as_mut();
-    ramfs_get_inode(
-        dir.i_sb
-            .as_mut()
-            .expect("dir has NULL super block")
-            .as_mut(),
-        Some(dir),
-        Mode::from_int(mode),
-        dev,
-    )
-    .map_or(Error::ENOSPC.to_kernel_errno(), move |inode| {
-        let dentry = dentry
-            .as_mut()
-            .expect("Called ramfs_mknod with NULL dentry")
-            .as_mut();
-        dentry.instantiate(inode);
-        dentry.get();
-        dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
-        0
-    })
-}
-
-unsafe extern "C" fn ramfs_mkdir(
-    ns: *mut bindings::user_namespace,
-    dir: *mut bindings::inode,
-    dentry: *mut bindings::dentry,
-    mode: bindings::umode_t,
-) -> i32 {
-    let dir = dir
-        .as_mut()
-        .expect("ramfs_mkdir got NULL directory")
-        .as_mut();
-    if ramfs_mknod(
-        ns,
-        dir.as_ptr_mut(),
-        dentry,
-        mode | Mode::S_IFDIR.as_int() as bindings::umode_t,
-        0,
-    ) < 0
-    {
-        dir.inc_nlink();
-    }
-    0
-}
-
-unsafe extern "C" fn ramfs_create(
-    ns: *mut bindings::user_namespace,
-    dir: *mut bindings::inode,
-    dentry: *mut bindings::dentry,
-    mode: bindings::umode_t,
-    _excl: bool,
-) -> i32 {
-    ramfs_mknod(
-        ns,
-        dir,
-        dentry,
-        mode | Mode::S_IFREG.as_int() as bindings::umode_t,
-        0,
-    )
-}
-
-#[no_mangle]
-unsafe extern "C" fn ramfs_symlink(
-    _ns: *mut bindings::user_namespace,
-    dir: *mut bindings::inode,
-    dentry: *mut bindings::dentry,
-    symname: *const c_char,
-) -> i32 {
-    pr_info!("in symlink");
-    let dir = dir
-        .as_mut()
-        .expect("ramfs_symlink got NULL directory")
-        .as_mut();
-    ramfs_get_inode(
-        dir.i_sb
-            .as_mut()
-            .expect("dir had NULL super block")
-            .as_mut(),
-        Some(dir),
-        Mode::S_IFLNK | Mode::S_IRWXUGO,
-        0,
-    )
-    .map_or(Error::ENOSPC.to_kernel_errno(), |inode| {
-        pr_info!("got inode ptr {:?}", inode.as_ptr_mut());
-        let l = bindings::strlen(symname) + 1;
-        pr_info!("str has len {:?}", l);
-        let ret = bindings::page_symlink(inode.as_ptr_mut(), symname, l as _);
-        if ret == 0 {
-            pr_info!("page_symlink is ok");
-            let dentry = dentry
-                .as_mut()
-                .expect("Called ramfs_symlink with NULL dentry")
-                .as_mut();
-            dentry.instantiate(inode);
-            dentry.get();
-            dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
-            pr_info!("current_time is ok");
-        } else {
-            inode.put();
-            pr_info!("iput is ok");
-        }
-        ret
-    })
-}
-
-static RAMFS_DIR_INODE_OPS: bindings::inode_operations = bindings::inode_operations {
-    create: Some(ramfs_create),
-    lookup: Some(bindings::simple_lookup),
-    link: Some(bindings::simple_link),
-    unlink: Some(bindings::simple_unlink),
-    symlink: Some(ramfs_symlink),
-    mkdir: Some(ramfs_mkdir),
-    rmdir: Some(bindings::simple_rmdir),
-    mknod: Some(ramfs_mknod),
-    rename: Some(bindings::simple_rename),
-    ..DEFAULT_INODE_OPERATIONS
-};
