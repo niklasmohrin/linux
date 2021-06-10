@@ -76,7 +76,7 @@ pub mod iov_iter;
 mod macros;
 pub mod of;
 pub mod platdev;
-mod types;
+pub mod types;
 pub mod user_ptr;
 
 #[doc(hidden)]

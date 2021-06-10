@@ -16,6 +16,12 @@ use crate::c_types;
 use crate::declare_constant_from_bindings;
 use crate::sync::{Ref, RefCounted};
 
+pub type UserNamespace = bindings::user_namespace;
+pub type Iattr = bindings::iattr;
+pub type Path = bindings::path;
+pub type Kstat = bindings::kstat;
+pub type Dev = bindings::dev_t;
+
 /// Permissions.
 ///
 /// C header: [`include/uapi/linux/stat.h`](../../../../include/uapi/linux/stat.h)
@@ -23,15 +29,16 @@ use crate::sync::{Ref, RefCounted};
 /// C header: [`include/linux/stat.h`](../../../../include/linux/stat.h)
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Mode(bindings::umode_t);
+pub type ModeInt = u16;
 
 impl Mode {
     /// Creates a [`Mode`] from an integer.
-    pub const fn from_int(m: u16) -> Mode {
+    pub const fn from_int(m: ModeInt) -> Mode {
         Mode(m)
     }
 
     /// Returns the mode as an integer.
-    pub fn as_int(&self) -> u16 {
+    pub fn as_int(&self) -> ModeInt {
         self.0
     }
 }

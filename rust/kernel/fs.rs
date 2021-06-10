@@ -1,5 +1,6 @@
 pub mod dentry;
 pub mod inode;
+pub mod inode_operations;
 pub mod kiocb;
 pub mod libfs_functions;
 pub mod super_block;

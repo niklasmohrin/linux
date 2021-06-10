@@ -1,10 +1,12 @@
+use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut};
 use core::{mem, ptr};
 
 use crate::bindings;
 use crate::file_operations::{FileOpenAdapter, FileOpener, FileOperationsVtable};
+use crate::fs::inode_operations::{InodeOperations, InodeOperationsVtable};
 use crate::fs::super_block::SuperBlock;
-use crate::types::Mode;
+use crate::types::{Dev, Mode};
 
 #[derive(PartialEq, Eq)]
 pub enum UpdateATime {
@@ -83,7 +85,7 @@ impl Inode {
             bindings::inode_nohighmem(self.as_ptr_mut());
         }
     }
-    pub fn init_special(&mut self, mode: Mode, device: bindings::dev_t) {
+    pub fn init_special(&mut self, mode: Mode, device: Dev) {
         unsafe {
             bindings::init_special_inode(self.as_ptr_mut(), mode.as_int(), device);
         }
@@ -99,6 +101,11 @@ impl Inode {
     ) {
         self.0.__bindgen_anon_3.i_fop =
             unsafe { FileOperationsVtable::<NopFileOpenAdapter, OPS>::build() };
+    }
+
+    pub fn set_inode_operations<OPS: InodeOperations>(&mut self, ops: OPS) {
+        self.0.i_op = unsafe { InodeOperationsVtable::<OPS>::build() };
+        self.0.i_private = Box::leak(Box::new(ops)) as *mut _ as *mut _;
     }
 }
 
