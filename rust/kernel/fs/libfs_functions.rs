@@ -11,6 +11,8 @@ use crate::{
         super_operations::Kstatfs, DeclaredFileSystemType, FileSystemBase,
     },
     iov_iter::IovIter,
+    str::CStr,
+    types::{Iattr, Kstat, Path, UserNamespace},
     Result,
 };
 
@@ -77,6 +79,96 @@ pub fn generic_delete_inode(inode: &mut Inode) -> Result {
 pub fn simple_statfs(root: &mut Dentry, buf: &mut Kstatfs) -> Result {
     Error::parse_int(unsafe { bindings::simple_statfs(root.as_ptr_mut(), buf as *mut _) })
         .map(|_| ())
+}
+
+pub fn simple_setattr(
+    mnt_userns: &mut UserNamespace,
+    dentry: &mut Dentry,
+    iattr: &mut Iattr,
+) -> Result {
+    Error::parse_int(unsafe {
+        bindings::simple_setattr(mnt_userns as *mut _, dentry.as_ptr_mut(), iattr as *mut _)
+    })
+    .map(|_| ())
+}
+
+pub fn simple_getattr(
+    mnt_userns: &mut UserNamespace,
+    path: &Path,
+    stat: &mut Kstat,
+    request_mask: u32,
+    query_flags: u32,
+) -> Result {
+    Error::parse_int(unsafe {
+        bindings::simple_getattr(
+            mnt_userns as *mut _,
+            path as *const _,
+            stat as *mut _,
+            request_mask,
+            query_flags,
+        )
+    })
+    .map(|_| ())
+}
+
+pub fn simple_lookup(dir: &mut Inode, dentry: &mut Dentry, flags: c_uint) -> Result<*mut Dentry> {
+    // todo: return type ptr vs ref?
+    from_kernel_err_ptr(unsafe {
+        bindings::simple_lookup(dir.as_ptr_mut(), dentry.as_ptr_mut(), flags) as *mut _
+    })
+}
+
+pub fn simple_link(old_dentry: &mut Dentry, dir: &mut Inode, dentry: &mut Dentry) -> Result {
+    Error::parse_int(unsafe {
+        bindings::simple_link(
+            old_dentry.as_ptr_mut(),
+            dir.as_ptr_mut(),
+            dentry.as_ptr_mut(),
+        )
+    })
+    .map(|_| ())
+}
+
+pub fn simple_unlink(dir: &mut Inode, dentry: &mut Dentry) -> Result {
+    Error::parse_int(unsafe { bindings::simple_unlink(dir.as_ptr_mut(), dentry.as_ptr_mut()) })
+        .map(|_| ())
+}
+
+pub fn simple_rmdir(dir: &mut Inode, dentry: &mut Dentry) -> Result {
+    Error::parse_int(unsafe { bindings::simple_rmdir(dir.as_ptr_mut(), dentry.as_ptr_mut()) })
+        .map(|_| ())
+}
+
+pub fn simple_rename(
+    mnt_userns: &mut UserNamespace,
+    old_dir: &mut Inode,
+    old_dentry: &mut Dentry,
+    new_dir: &mut Inode,
+    new_dentry: &mut Dentry,
+    flags: c_uint,
+) -> Result {
+    Error::parse_int(unsafe {
+        bindings::simple_rename(
+            mnt_userns as *mut _,
+            old_dir.as_ptr_mut(),
+            old_dentry.as_ptr_mut(),
+            new_dir.as_ptr_mut(),
+            new_dentry.as_ptr_mut(),
+            flags,
+        )
+    })
+    .map(|_| ())
+}
+
+pub fn page_symlink(inode: &mut Inode, symname: &'static CStr) -> Result {
+    Error::parse_int(unsafe {
+        bindings::page_symlink(
+            inode.as_ptr_mut(),
+            symname.as_ptr() as _,
+            symname.len_with_nul() as _,
+        )
+    })
+    .map(|_| ())
 }
 
 pub fn register_filesystem<T: DeclaredFileSystemType>() -> Result {
