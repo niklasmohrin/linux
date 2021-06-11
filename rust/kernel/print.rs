@@ -7,7 +7,7 @@
 //! Reference: <https://www.kernel.org/doc/html/latest/core-api/printk-basics.html>
 
 use core::cmp;
-use core::fmt;
+use core::fmt::{self, Debug};
 
 use crate::bindings;
 use crate::c_types::{c_char, c_void};
@@ -410,3 +410,37 @@ macro_rules! pr_cont (
         $crate::print_macro!($crate::print::format_strings::CONT, true, $($arg)*)
     )
 );
+
+/// Extension trait for the `expect` method on `Option` and `Result` that prints an error message
+/// with `printk` before panicking.
+pub trait ExpectK<T> {
+    fn expectk(self, msg: &str) -> T;
+}
+
+impl<T> ExpectK<T> for Option<T> {
+    fn expectk(self, msg: &str) -> T {
+        match self {
+            Some(val) => val,
+            None => {
+                pr_emerg!("Called expectk on a None value: {}", msg);
+                panic!();
+            }
+        }
+    }
+}
+
+impl<T, E: Debug> ExpectK<T> for Result<T, E> {
+    fn expectk(self, msg: &str) -> T {
+        match self {
+            Ok(val) => val,
+            Err(err) => {
+                pr_emerg!(
+                    "Called expectk on a Err value: {}\nThe value was {:?}",
+                    msg,
+                    err
+                );
+                panic!();
+            }
+        }
+    }
+}
