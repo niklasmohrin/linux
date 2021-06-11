@@ -9,8 +9,8 @@ pub mod super_operations;
 use core::ptr;
 
 use crate::{
-    bindings, c_types::*, error::from_kernel_err_ptr, fs::super_block::SuperBlock, ret_err_ptr,
-    str::CStr, Result,
+    bindings, c_types::*, error::from_kernel_err_ptr, fs::super_block::SuperBlock, print::ExpectK,
+    ret_err_ptr, str::CStr, Result,
 };
 
 pub type FileSystemType = bindings::file_system_type;
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn kill_superblock_callback<T: FileSystemBase>(
     unsafe {
         let sb = sb
             .as_mut()
-            .expect("kill_superblock got NULL super block")
+            .expectk("kill_superblock got NULL super block")
             .as_mut();
         T::kill_super(sb);
     }

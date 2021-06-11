@@ -11,6 +11,7 @@ use crate::{
         super_operations::Kstatfs, DeclaredFileSystemType, FileSystemBase,
     },
     iov_iter::IovIter,
+    print::ExpectK,
     str::CStr,
     types::{Iattr, Kstat, Path, UserNamespace},
     Result,
@@ -200,7 +201,7 @@ unsafe extern "C" fn fill_super_callback<T: FileSystemBase>(
     silent: c_int,
 ) -> c_int {
     unsafe {
-        let sb = sb.as_mut().expect("SuperBlock was null").as_mut();
+        let sb = sb.as_mut().expectk("SuperBlock was null").as_mut();
         let data = (data as *mut T::MountOptions).as_mut();
         T::fill_super(sb, data, silent)
             .map(|_| 0)
