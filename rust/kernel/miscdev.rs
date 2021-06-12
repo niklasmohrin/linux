@@ -9,6 +9,7 @@
 use crate::bindings;
 use crate::error::{Error, Result};
 use crate::file_operations::{FileOpenAdapter, FileOpener, FileOperationsVtable};
+use crate::fs::BuildVtable;
 use crate::str::CStr;
 use alloc::boxed::Box;
 use core::marker::PhantomPinned;
@@ -68,7 +69,7 @@ impl<T: Sync> Registration<T> {
         }
 
         // SAFETY: The adapter is compatible with `misc_register`.
-        this.mdev.fops = unsafe { FileOperationsVtable::<Self, F>::build() };
+        this.mdev.fops = unsafe { FileOperationsVtable::<Self, F>::build_vtable() };
         this.mdev.name = name.as_char_ptr();
         this.mdev.minor = minor.unwrap_or(bindings::MISC_DYNAMIC_MINOR as i32);
 

@@ -214,3 +214,14 @@ pub fn kill_litter_super(sb: &mut SuperBlock) {
         bindings::kill_litter_super(sb.as_ptr_mut());
     }
 }
+
+crate::declare_c_vtable!(
+    SimpleDirOperations,
+    bindings::file_operations,
+    bindings::simple_dir_operations,
+);
+crate::declare_c_vtable!(
+    PageSymlinkInodeOperations,
+    bindings::inode_operations,
+    bindings::page_symlink_inode_operations,
+);

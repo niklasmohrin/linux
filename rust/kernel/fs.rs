@@ -13,6 +13,21 @@ use crate::{
     ret_err_ptr, str::CStr, Result,
 };
 
+pub trait BuildVtable<T> {
+    fn build_vtable() -> &'static T;
+}
+#[macro_export]
+macro_rules! declare_c_vtable {
+    ($O:ident, $T:ty, $val:expr $(,)?) => {
+        pub struct $O;
+        impl $crate::fs::BuildVtable<$T> for $O {
+            fn build_vtable() -> &'static $T {
+                unsafe { &($val) }
+            }
+        }
+    };
+}
+
 pub type FileSystemType = bindings::file_system_type;
 
 pub trait FileSystemBase {
@@ -60,23 +75,6 @@ macro_rules! declare_fs_type {
         }
     };
 }
-
-// Doesn't work because we need mutable access to an associated item
-// pub struct FileSystemTypeVTable<T>(PhantomData<T>);
-// impl<T: FileSystemBase> FileSystemTypeVTable<T> {
-//     const VTABLE: bindings::file_system_type = bindings::file_system_type {
-//         name: T::NAME.as_char_ptr() as *const _,
-//         fs_flags: T::FS_FLAGS,
-//         mount: Some(mount_callback::<T>),
-//         kill_sb: Some(kill_superblock_callback::<T>),
-//         owner: T::OWNER,
-//         ..DEFAULT_FS_TYPE
-//     };
-
-//     pub const fn build() -> &'static bindings::file_system_type {
-//         &Self::VTABLE
-//     }
-// }
 
 pub unsafe extern "C" fn mount_callback<T: FileSystemBase>(
     fs_type: *mut bindings::file_system_type,

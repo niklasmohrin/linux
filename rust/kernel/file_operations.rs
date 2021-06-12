@@ -14,7 +14,7 @@ use crate::{
     error::{Error, Result},
     file::{File, FileRef},
     from_kernel_result,
-    fs::kiocb::Kiocb,
+    fs::{kiocb::Kiocb, BuildVtable},
     io_buffer::{IoBufferReader, IoBufferWriter},
     iov_iter::IovIter,
     sync::CondVar,
@@ -400,13 +400,12 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
             None
         },
     };
+}
 
-    /// Builds an instance of [`struct file_operations`].
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the adapter is compatible with the way the device is registered.
-    pub(crate) const unsafe fn build() -> &'static bindings::file_operations {
+impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> BuildVtable<bindings::file_operations>
+    for FileOperationsVtable<A, T>
+{
+    fn build_vtable() -> &'static bindings::file_operations {
         &Self::VTABLE
     }
 }
@@ -587,6 +586,18 @@ pub trait FileOpenAdapter {
         -> *const Self::Arg;
 }
 
+pub struct NopFileOpenAdapter;
+impl FileOpenAdapter for NopFileOpenAdapter {
+    type Arg = ();
+
+    unsafe fn convert(
+        _inode: *mut bindings::inode,
+        _file: *mut bindings::file,
+    ) -> *const Self::Arg {
+        &()
+    }
+}
+
 /// Trait for implementers of kernel files.
 ///
 /// In addition to the methods in [`FileOperations`], implementers must also provide
@@ -603,6 +614,12 @@ pub trait FileOpener<T: ?Sized>: FileOperations {
 impl<T: FileOperations<Wrapper = Box<T>> + Default> FileOpener<()> for T {
     fn open(_: &()) -> Result<Self::Wrapper> {
         Ok(Box::try_new(T::default())?)
+    }
+}
+
+impl<T: FileOpener<()>> BuildVtable<bindings::file_operations> for T {
+    fn build_vtable() -> &'static bindings::file_operations {
+        FileOperationsVtable::<NopFileOpenAdapter, T>::build_vtable()
     }
 }
 

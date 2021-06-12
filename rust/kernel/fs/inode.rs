@@ -3,9 +3,8 @@ use core::ops::{Deref, DerefMut};
 use core::{mem, ptr};
 
 use crate::bindings;
-use crate::file_operations::{FileOpenAdapter, FileOpener, FileOperationsVtable};
-use crate::fs::inode_operations::{InodeOperations, InodeOperationsVtable};
 use crate::fs::super_block::SuperBlock;
+use crate::fs::BuildVtable;
 use crate::types::{Dev, Mode};
 
 #[derive(PartialEq, Eq)]
@@ -96,31 +95,15 @@ impl Inode {
         }
     }
 
-    pub fn set_file_operations<OPS: FileOpener<<NopFileOpenAdapter as FileOpenAdapter>::Arg>>(
-        &mut self,
-    ) {
-        self.0.__bindgen_anon_3.i_fop =
-            unsafe { FileOperationsVtable::<NopFileOpenAdapter, OPS>::build() };
+    pub fn set_file_operations<V: BuildVtable<bindings::file_operations>>(&mut self) {
+        self.__bindgen_anon_3.i_fop = V::build_vtable();
     }
 
-    pub fn set_inode_operations<OPS: InodeOperations>(&mut self, ops: OPS) {
-        self.0.i_op = unsafe { InodeOperationsVtable::<OPS>::build() };
-        self.0.i_private = Box::leak(Box::new(ops)) as *mut _ as *mut _;
-    }
-}
-
-pub struct NopFileOpenAdapter;
-
-// don't really understand what this means, but we need someone to impl it and chrdev also returns
-// (), so let's stick to this for now
-impl FileOpenAdapter for NopFileOpenAdapter {
-    type Arg = ();
-
-    unsafe fn convert(
-        _inode: *mut bindings::inode,
-        _file: *mut bindings::file,
-    ) -> *const Self::Arg {
-        &()
+    pub fn set_inode_operations<Ops: BuildVtable<bindings::inode_operations>>(&mut self, ops: Ops) {
+        self.i_op = Ops::build_vtable();
+        // TODO: Box::try_new
+        // => probably shouzldn't allocate in this method anyways, revisit signature
+        self.i_private = Box::into_raw(Box::new(ops)).cast();
     }
 }
 

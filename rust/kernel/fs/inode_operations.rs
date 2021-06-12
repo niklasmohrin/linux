@@ -10,10 +10,10 @@ use crate::{
     bindings, c_types,
     error::{Error, Result},
     from_kernel_result,
-    fs::{dentry::Dentry, inode::Inode},
+    fs::{dentry::Dentry, inode::Inode, BuildVtable},
+    print::ExpectK,
     str::CStr,
     types::{Dev, Iattr, Kstat, Mode, ModeInt, Path, UserNamespace},
-    print::ExpectK,
 };
 
 /// Corresponds to the kernel's `struct inode_operations`.
@@ -114,6 +114,7 @@ pub trait InodeOperations: Send + Sync + Sized + Default {
         Err(Error::EINVAL)
     }
 }
+
 unsafe extern "C" fn setattr_callback<T: InodeOperations>(
     mnt_userns: *mut bindings::user_namespace,
     dentry: *mut bindings::dentry,
@@ -362,14 +363,17 @@ impl<T: InodeOperations> InodeOperationsVtable<T> {
         fileattr_get: None,
         fileattr_set: None,
     };
+}
 
-    /// Builds an instance of [`struct inode_operations`].
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the adapter is compatible with the way the device is registered.
-    pub(crate) const unsafe fn build() -> &'static bindings::inode_operations {
+impl<T: InodeOperations> BuildVtable<bindings::inode_operations> for InodeOperationsVtable<T> {
+    fn build_vtable() -> &'static bindings::inode_operations {
         &Self::VTABLE
+    }
+}
+
+impl<T: InodeOperations> BuildVtable<bindings::inode_operations> for T {
+    fn build_vtable() -> &'static bindings::inode_operations {
+        InodeOperationsVtable::<T>::build_vtable()
     }
 }
 

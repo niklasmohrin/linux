@@ -17,6 +17,7 @@ use crate::bindings;
 use crate::c_types;
 use crate::error::{Error, Result};
 use crate::file_operations;
+use crate::fs::BuildVtable;
 use crate::str::CStr;
 
 /// Character device.
@@ -168,7 +169,7 @@ impl<const N: usize> Registration<{ N }> {
 
         // SAFETY: The adapter doesn't retrieve any state yet, so it's compatible with any
         // registration.
-        let fops = unsafe { file_operations::FileOperationsVtable::<Self, T>::build() };
+        let fops = unsafe { file_operations::FileOperationsVtable::<Self, T>::build_vtable() };
         let mut cdev = Cdev::alloc(fops, &this.this_module)?;
         cdev.add(inner.dev + inner.used as bindings::dev_t, 1)?;
         inner.cdevs[inner.used].replace(cdev);

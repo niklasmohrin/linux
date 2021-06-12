@@ -14,7 +14,7 @@ use kernel::{
         inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
         inode_operations::InodeOperations,
         kiocb::Kiocb,
-        libfs_functions,
+        libfs_functions::{self, PageSymlinkInodeOperations, SimpleDirOperations},
         super_block::SuperBlock,
         super_operations::{Kstatfs, SeqFile, SuperOperations},
         FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS,
@@ -77,14 +77,14 @@ impl FileSystemBase for BS2Ramfs {
 
         sb.s_magic = BS2RAMFS_MAGIC;
         let ops = Bs2RamfsSuperOps::default();
-        unsafe {
-            // TODO: investigate if this really has to be set to NULL in case we run out of memory
-            sb.s_root = ptr::null_mut();
-            sb.s_root = ramfs_get_inode(sb, None, Mode::S_IFDIR | ops.mount_opts.mode, 0)
-                .and_then(Dentry::make_root)
-                .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
-        }
+
+        // TODO: investigate if this really has to be set to NULL in case we run out of memory
+        sb.s_root = ptr::null_mut();
+        sb.s_root = ramfs_get_inode(sb, None, Mode::S_IFDIR | ops.mount_opts.mode, 0)
+            .and_then(Dentry::make_root)
+            .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
         pr_emerg!("(rust) s_root: {:?}", sb.s_root);
+
         sb.set_super_operations(ops);
         sb.s_maxbytes = MAX_LFS_FILESIZE;
         sb.s_blocksize = kernel::PAGE_SIZE as _;
@@ -376,11 +376,9 @@ pub fn ramfs_get_inode<'a>(
         inode.i_ino = Inode::next_ino() as _;
         inode.init_owner(unsafe { &mut bindings::init_user_ns }, dir, mode);
 
-        unsafe { (*inode.i_mapping).a_ops = &RAMFS_AOPS };
         unsafe {
+            (*inode.i_mapping).a_ops = &RAMFS_AOPS;
             rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
-        }
-        unsafe {
             rust_helper_mapping_set_unevictable(inode.i_mapping);
         }
 
@@ -392,13 +390,11 @@ pub fn ramfs_get_inode<'a>(
             }
             Mode::S_IFDIR => {
                 inode.set_inode_operations(Bs2RamfsDirInodeOps);
-                unsafe { inode.__bindgen_anon_3.i_fop = &bindings::simple_dir_operations }; // todo: write wrapper function
-                                                                                            // inode.i_op = &RAMFS_DIR_INODE_OPS;
-                                                                                            // inode.__bindgen_anon_3.i_fop = &bindings::simple_dir_operations;
+                inode.set_file_operations::<SimpleDirOperations>();
                 inode.inc_nlink();
             }
             Mode::S_IFLNK => {
-                unsafe { inode.i_op = &bindings::page_symlink_inode_operations };
+                inode.set_inode_operations(PageSymlinkInodeOperations);
                 inode.nohighmem();
             }
             _ => {
