@@ -1,3 +1,4 @@
+pub mod address_space_operations;
 pub mod dentry;
 pub mod inode;
 pub mod inode_operations;
@@ -101,32 +102,6 @@ pub unsafe extern "C" fn kill_superblock_callback<T: FileSystemBase>(
         T::kill_super(sb);
     }
 }
-
-pub const DEFAULT_ADDRESS_SPACE_OPERATIONS: bindings::address_space_operations =
-    bindings::address_space_operations {
-        readpage: None,
-        readahead: None,
-        write_begin: None,
-        write_end: None,
-        set_page_dirty: None,
-        writepage: None,
-        writepages: None,
-        readpages: None,
-        bmap: None,
-        invalidatepage: None,
-        releasepage: None,
-        freepage: None,
-        direct_IO: None,
-        migratepage: None,
-        isolate_page: None,
-        putback_page: None,
-        launder_page: None,
-        is_partially_uptodate: None,
-        is_dirty_writeback: None,
-        error_remove_page: None,
-        swap_activate: None,
-        swap_deactivate: None,
-    };
 
 pub const DEFAULT_FS_TYPE: bindings::file_system_type = bindings::file_system_type {
     name: ptr::null(),

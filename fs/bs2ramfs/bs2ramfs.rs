@@ -10,6 +10,7 @@ use kernel::{
     file::File,
     file_operations::{FileOperations, SeekFrom},
     fs::{
+        address_space_operations::AddressSpaceOperations,
         dentry::Dentry,
         inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
         inode_operations::InodeOperations,
@@ -17,12 +18,12 @@ use kernel::{
         libfs_functions::{self, PageSymlinkInodeOperations, SimpleDirOperations},
         super_block::SuperBlock,
         super_operations::{Kstatfs, SeqFile, SuperOperations},
-        FileSystemBase, FileSystemType, DEFAULT_ADDRESS_SPACE_OPERATIONS,
+        FileSystemBase, FileSystemType,
     },
     iov_iter::IovIter,
     prelude::*,
     str::CStr,
-    types::{Dev, Iattr, Kstat, Path, UserNamespace},
+    types::{AddressSpace, Dev, Iattr, Kstat, Page, Path, UserNamespace},
     Error, Mode,
 };
 
@@ -217,13 +218,46 @@ impl SuperOperations for Bs2RamfsSuperOps {
     }
 }
 
-static RAMFS_AOPS: bindings::address_space_operations = bindings::address_space_operations {
-    readpage: Some(bindings::simple_readpage),
-    write_begin: Some(bindings::simple_write_begin),
-    write_end: Some(bindings::simple_write_end),
-    set_page_dirty: Some(bindings::__set_page_dirty_nobuffers),
-    ..DEFAULT_ADDRESS_SPACE_OPERATIONS
-};
+#[derive(Default)]
+struct Bs2RamfsAOps;
+
+impl AddressSpaceOperations for Bs2RamfsAOps {
+    kernel::declare_address_space_operations!(readpage, write_begin, write_end, set_page_dirty);
+
+    fn readpage(&self, file: &File, page: &mut Page) -> Result {
+        libfs_functions::simple_readpage(file, page)
+    }
+
+    fn write_begin(
+        &self,
+        file: Option<&File>,
+        mapping: &mut AddressSpace,
+        pos: bindings::loff_t,
+        len: u32,
+        flags: u32,
+        pagep: *mut *mut Page,
+        fsdata: *mut *mut c_void,
+    ) -> Result {
+        libfs_functions::simple_write_begin(file, mapping, pos, len, flags, pagep, fsdata)
+    }
+
+    fn write_end(
+        &self,
+        file: Option<&File>,
+        mapping: &mut AddressSpace,
+        pos: bindings::loff_t,
+        len: u32,
+        copied: u32,
+        page: &mut Page,
+        fsdata: *mut c_void,
+    ) -> Result<u32> {
+        libfs_functions::simple_write_end(file, mapping, pos, len, copied, page, fsdata)
+    }
+
+    fn set_page_dirty(&self, page: &mut Page) -> Result<bool> {
+        libfs_functions::__set_page_dirty_nobuffers(page)
+    }
+}
 
 #[derive(Default)]
 struct Bs2RamfsFileInodeOps;
@@ -376,8 +410,10 @@ pub fn ramfs_get_inode<'a>(
         inode.i_ino = Inode::next_ino() as _;
         inode.init_owner(unsafe { &mut bindings::init_user_ns }, dir, mode);
 
+        inode.set_address_space_operations(Bs2RamfsAOps);
+
+        // I think these should be functions on the AddressSpace, i.e. sth like inode.get_address_space().set_gfp_mask(...)
         unsafe {
-            (*inode.i_mapping).a_ops = &RAMFS_AOPS;
             rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
             rust_helper_mapping_set_unevictable(inode.i_mapping);
         }

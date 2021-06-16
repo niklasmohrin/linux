@@ -105,6 +105,17 @@ impl Inode {
         // => probably shouzldn't allocate in this method anyways, revisit signature
         self.i_private = Box::into_raw(Box::new(ops)).cast();
     }
+
+    // I think Inode should rather have a method get_address_space, and the AddressSpace should then provide set_address_space_operations
+    pub fn set_address_space_operations<Ops: BuildVtable<bindings::address_space_operations>>(
+        &mut self,
+        ops: Ops,
+    ) {
+        unsafe {
+            (*self.i_mapping).a_ops = Ops::build_vtable();
+            (*self.i_mapping).private_data = Box::into_raw(Box::new(ops)).cast();
+        }
+    }
 }
 
 impl Deref for Inode {

@@ -13,7 +13,7 @@ use crate::{
     iov_iter::IovIter,
     print::ExpectK,
     str::CStr,
-    types::{Iattr, Kstat, Path, UserNamespace},
+    types::{AddressSpace, Iattr, Kstat, Page, Path, UserNamespace},
     Result,
 };
 
@@ -213,6 +213,61 @@ pub fn kill_litter_super(sb: &mut SuperBlock) {
     unsafe {
         bindings::kill_litter_super(sb.as_ptr_mut());
     }
+}
+
+pub fn simple_readpage(file: &File, page: &mut Page) -> Result {
+    Error::parse_int(unsafe { bindings::simple_readpage(file.ptr, page as *mut _) }).map(|_| ())
+}
+
+pub fn simple_write_begin(
+    file: Option<&File>,
+    mapping: &mut AddressSpace,
+    pos: bindings::loff_t,
+    len: u32,
+    flags: u32,
+    pagep: *mut *mut Page,
+    fsdata: *mut *mut c_void,
+) -> Result {
+    Error::parse_int(unsafe {
+        bindings::simple_write_begin(
+            file.map(|f| f.ptr).unwrap_or(ptr::null_mut()),
+            mapping as *mut _,
+            pos,
+            len,
+            flags,
+            pagep,
+            fsdata,
+        )
+    })
+    .map(|_| ())
+}
+
+pub fn simple_write_end(
+    file: Option<&File>,
+    mapping: &mut AddressSpace,
+    pos: bindings::loff_t,
+    len: u32,
+    copied: u32,
+    page: &mut Page,
+    fsdata: *mut c_void,
+) -> Result<u32> {
+    Error::parse_int(unsafe {
+        bindings::simple_write_end(
+            file.map(|f| f.ptr).unwrap_or(ptr::null_mut()),
+            mapping as *mut _,
+            pos,
+            len,
+            copied,
+            page,
+            fsdata,
+        )
+    })
+    .map(|x| x as u32)
+}
+
+pub fn __set_page_dirty_nobuffers(page: &mut Page) -> Result<bool> {
+    Error::parse_int(unsafe { bindings::__set_page_dirty_nobuffers(page as *mut _) })
+        .map(|x| x != 0)
 }
 
 crate::declare_c_vtable!(
