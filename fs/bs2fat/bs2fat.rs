@@ -1,5 +1,21 @@
+#![no_std]
+
+use core::ptr;
+
+use kernel::{
+    bindings,
+    c_types::*,
+    declare_file_operations,
+    file::File,
+    file_operations::{FileOperations, IoctlCommand, SeekFrom},
+    fs::{kiocb::Kiocb, libfs_functions, super_block::SuperBlock, FileSystemBase, FileSystemType},
+    iov_iter::IovIter,
+    prelude::*,
+    str::CStr,
+};
+
 module! {
-    type: BS2FAT,
+    type: BS2Fat,
     name: b"bs2fat",
     author: b"Rust for Linux Contributors",
     description: b"MS-DOS filesystem support",
@@ -7,13 +23,13 @@ module! {
 }
 
 /* Characters that are undesirable in an MS-DOS file name */
-const BAD_CHARS: [i8] = "*?<>|\"";
-const BAD_IF_STRICT: [i8] = "+=,; ";
+const BAD_CHARS: &[u8] = b"*?<>|\"";
+const BAD_IF_STRICT: &[u8] = b"+=,; ";
 
 struct BS2Fat;
 
 impl FileSystemBase for BS2Fat {
-    const NAME: &'static CStr = kernel::cstr!("bs2fat");
+    const NAME: &'static CStr = kernel::c_str!("bs2fat");
     const FS_FLAGS: c_int = bindings::FS_USERNS_MOUNT as _;
     const OWNER: *mut bindings::module = ptr::null_mut();
 
@@ -26,39 +42,40 @@ impl FileSystemBase for BS2Fat {
         libfs_functions::mount_bdev::<Self>(flags, data)
     }
 
-    fn kill_super(sb: &mut SuperBlock) {}
+    fn kill_super(sb: &mut SuperBlock) {
+        unimplemented!()
+    }
 
     fn fill_super(
         sb: &mut SuperBlock,
         _data: Option<&mut Self::MountOptions>,
         _silent: c_int,
     ) -> Result {
-        sb.s_magic = BS2FAT_MAGIC;
+        // sb.s_magic = BS2FAT_MAGIC;
+        unimplemented!()
     }
 }
 
-kernel::declare_fs_type!(BS2Ramfs, BS2RAMFS_FS_TYPE);
+kernel::declare_fs_type!(BS2Fat, BS2FAT_FS_TYPE);
 
 impl KernelModule for BS2Fat {
     fn init() -> Result<Self> {
-        pr_emerg!("BSFat in action");
-        Self::register().map(move |_| Self)
-
-        // Irgendwas mit caching...
+        pr_emerg!("bs2 fat in action");
+        libfs_functions::register_filesystem::<Self>().map(move |_| Self)
     }
 }
 
 impl Drop for BS2Fat {
     fn drop(&mut self) {
-        let _ = Self::unregister();
-        pr_info!("BSFat out of action");
+        let _ = libfs_functions::unregister_filesystem::<Self>();
+        pr_info!("bs2 fat out of action");
     }
 }
 
 struct Bs2FatFileOps;
 
 impl FileOperations for Bs2FatFileOps {
-    declare_file_opearions!(
+    declare_file_operations!(
         release,
         read_iter,
         write_iter,
@@ -68,8 +85,8 @@ impl FileOperations for Bs2FatFileOps {
         fsync,
         mmap,
         splice_read,
-        splice_write,
-        allocate_file,
+        splice_write
+        // allocate_file,
     );
 
     fn release(_obj: Self::Wrapper, _file: &File) {
@@ -126,8 +143,8 @@ impl FileOperations for Bs2FatFileOps {
         libfs_functions::iter_file_splice_write(pipe, file, pos, len, flags)
     }
 
-    fn allocate_file(&self /* ... */) /* -> ? */
-    {
-        unimplemented!()
-    }
+    // fn allocate_file(&self /* ... */) /* -> ? */
+    // {
+    //     unimplemented!()
+    // }
 }
