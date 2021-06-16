@@ -195,6 +195,23 @@ pub fn mount_nodev<T: DeclaredFileSystemType>(
     })
 }
 
+pub fn mount_bdev<T: DeclaredFileSystemType>(
+    flags: c_int,
+    dev_name: &CStr,
+    data: Option<&mut T::MountOptions>,
+) -> Result<*mut bindings::dentry> {
+    from_kernel_err_ptr(unsafe {
+        bindings::mount_bdev(
+            T::file_system_type(),
+            flags,
+            dev_name.as_char_ptr(),
+            data.map(|p| p as *mut _ as *mut _)
+                .unwrap_or_else(ptr::null_mut),
+            Some(fill_super_callback::<T>),
+        )
+    })
+}
+
 unsafe extern "C" fn fill_super_callback<T: FileSystemBase>(
     sb: *mut bindings::super_block,
     data: *mut c_void,
