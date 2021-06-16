@@ -5,7 +5,7 @@ use crate::{
     c_types::*,
     error::Error,
     file::File,
-    file_operations::SeekFrom,
+    file_operations::{IoctlCommand, SeekFrom},
     fs::{
         dentry::Dentry, from_kernel_err_ptr, inode::Inode, kiocb::Kiocb, super_block::SuperBlock,
         super_operations::Kstatfs, DeclaredFileSystemType, FileSystemBase,
@@ -23,6 +23,11 @@ pub fn generic_file_read_iter(iocb: &mut Kiocb, iter: &mut IovIter) -> Result<us
 
 pub fn generic_file_write_iter(iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
     Error::parse_int(unsafe { bindings::generic_file_write_iter(iocb.as_ptr_mut(), iter.ptr) as _ })
+}
+
+pub fn compat_ptr_ioctl(file: &File, cmd: &mut IoctlCommand) -> Result<i32> {
+    let (cmd, arg) = cmd.raw();
+    Error::parse_int(unsafe { bindings::compat_ptr_ioctl(file.ptr, cmd, arg as _) }).map(|x| x as _)
 }
 
 pub fn generic_file_mmap(file: &File, vma: &mut bindings::vm_area_struct) -> Result {
