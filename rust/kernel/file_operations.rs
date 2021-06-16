@@ -18,7 +18,7 @@ use crate::{
     io_buffer::{IoBufferReader, IoBufferWriter},
     iov_iter::IovIter,
     sync::CondVar,
-    types::{Mode, PointerWrapper},
+    types::PointerWrapper,
     user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
 };
 
@@ -319,7 +319,7 @@ unsafe extern "C" fn fallocate_callback<T: FileOperations>(
     from_kernel_result! {
         unsafe {
             let f = &*((*file).private_data as *const T);
-            f.allocate_file(&FileRef::from_ptr(file), Mode::from_int(mode as _), offset, length).map(|()| 0)
+            f.allocate_file(&FileRef::from_ptr(file), FileAllocMode::from_int(mode as _), offset, length).map(|()| 0)
         }
     }
 }
@@ -588,6 +588,38 @@ impl IoctlCommand {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct FileAllocMode(u8);
+
+#[rustfmt::skip]
+impl FileAllocMode {
+    pub const KEEP_SIZE: Self      = Self::from_int(0x01);
+    pub const PUNCH_HOLE: Self     = Self::from_int(0x02);
+    pub const NO_HIDE_STALE: Self   = Self::from_int(0x04);
+    pub const COLLAPSE_RANGE: Self = Self::from_int(0x08);
+    pub const ZERO_RANGE: Self     = Self::from_int(0x10);
+    pub const INSERT_RANGE: Self   = Self::from_int(0x20);
+    pub const UNSHARE_RANGE: Self  = Self::from_int(0x40);
+}
+
+impl FileAllocMode {
+    pub const fn from_int(val: u8) -> Self {
+        Self(val)
+    }
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+    pub const fn has(self, other: Self) -> bool {
+        self.0 & other.0 != 0
+    }
+    pub const fn with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
+}
+
 /// Trait for extracting file open arguments from kernel data structures.
 ///
 /// This is meant to be implemented by registration managers.
@@ -797,7 +829,7 @@ pub trait FileOperations: Send + Sync + Sized {
     fn allocate_file(
         &self,
         _file: &File,
-        _mode: Mode,
+        _mode: FileAllocMode,
         _offset: bindings::loff_t,
         _length: bindings::loff_t,
     ) -> Result {

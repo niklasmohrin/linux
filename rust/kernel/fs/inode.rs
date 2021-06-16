@@ -5,6 +5,7 @@ use core::{mem, ptr};
 use crate::bindings;
 use crate::fs::super_block::SuperBlock;
 use crate::fs::BuildVtable;
+use crate::print::ExpectK;
 use crate::types::{Dev, Mode};
 
 #[derive(PartialEq, Eq)]
@@ -36,6 +37,19 @@ impl Inode {
             bindings::new_inode(sb.as_ptr_mut())
                 .as_mut()
                 .map(AsMut::as_mut)
+        }
+    }
+
+    pub fn mode(&self) -> Mode {
+        Mode::from_int(self.i_mode)
+    }
+
+    pub fn super_block(&mut self) -> &mut SuperBlock {
+        unsafe {
+            self.i_sb
+                .as_mut()
+                .expectk("Inode had NULL super block")
+                .as_mut()
         }
     }
 
@@ -115,6 +129,50 @@ impl Inode {
             (*self.i_mapping).a_ops = Ops::build_vtable();
             (*self.i_mapping).private_data = Box::into_raw(Box::new(ops)).cast();
         }
+    }
+
+    pub fn size_read(&self) -> bindings::loff_t {
+        // niklas: off, another inline function (include/linux/fs.h, 831)
+        unimplemented!()
+    }
+
+    pub fn lock(&mut self) -> LockGuard<'_> {
+        LockGuard::new(self)
+    }
+}
+
+pub struct LockGuard<'a> {
+    inner: &'a mut Inode,
+}
+
+impl<'a> LockGuard<'a> {
+    pub fn new(inner: &'a mut Inode) -> Self {
+        todo!("another inline function, don't forget to impl before using this");
+        unsafe {
+            // bindings::inode_lock(inner.as_ptr_mut());
+        }
+        Self { inner }
+    }
+}
+
+impl<'a> Drop for LockGuard<'a> {
+    fn drop(&mut self) {
+        todo!("another inline function, don't forget to impl before using this");
+        unsafe {
+            // bindings::inode_unlock(self.inner.as_ptr_mut());
+        }
+    }
+}
+impl<'a> Deref for LockGuard<'a> {
+    type Target = Inode;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a> DerefMut for LockGuard<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 

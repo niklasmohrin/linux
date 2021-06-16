@@ -1,18 +1,23 @@
 #![no_std]
 
-use core::ptr;
+use core::{ops::DerefMut, ptr};
 
 use kernel::{
     bindings,
     c_types::*,
     declare_file_operations,
     file::File,
-    file_operations::{FileOperations, IoctlCommand, SeekFrom},
-    fs::{kiocb::Kiocb, libfs_functions, super_block::SuperBlock, FileSystemBase, FileSystemType},
+    file_operations::{FileAllocMode, FileOperations, IoctlCommand, SeekFrom},
+    fs::{
+        inode::Inode, kiocb::Kiocb, libfs_functions, super_block::SuperBlock, FileSystemBase,
+        FileSystemType,
+    },
     iov_iter::IovIter,
     prelude::*,
+    print::ExpectK,
     str::CStr,
     types::Mode,
+    Error,
 };
 
 module! {
@@ -74,9 +79,14 @@ impl Drop for BS2Fat {
     }
 }
 
-struct Bs2FatFileOps;
+struct BS2FatSuperOps {
+    cluster_bits: usize, // I made up the types
+    cluster_size: usize,
+}
 
-impl FileOperations for Bs2FatFileOps {
+struct BS2FatFileOps;
+
+impl FileOperations for BS2FatFileOps {
     declare_file_operations!(
         // release, // always used
         read_iter,
@@ -147,11 +157,55 @@ impl FileOperations for Bs2FatFileOps {
 
     fn allocate_file(
         &self,
-        _file: &File,
-        _mode: Mode,
-        _offset: bindings::loff_t,
-        _length: bindings::loff_t,
+        file: &File,
+        mode: FileAllocMode,
+        offset: bindings::loff_t,
+        length: bindings::loff_t,
     ) -> Result {
-        unimplemented!()
+        if !mode.without(FileAllocMode::KEEP_SIZE).is_empty() {
+            // No support for hole punch or other fallocate flags.
+            return Err(Error::EOPNOTSUPP);
+        }
+
+        let inode = file.host_inode();
+
+        if !inode.mode().is_regular_file() {
+            return Err(Error::EOPNOTSUPP);
+        }
+
+        let end_offset = offset + length;
+        let sb_info: &BS2FatSuperOps = todo!(); // inode.super_block().super_ops().as_mut();
+        let inode = inode.lock();
+        if mode.has(FileAllocMode::KEEP_SIZE) {
+            let size_on_disk = inode.i_blocks << 9;
+            if end_offset <= size_on_disk as _ {
+                return Ok(());
+            }
+
+            let bytes_for_file = end_offset as u64 - size_on_disk;
+            let num_clusters =
+                (bytes_for_file + sb_info.cluster_size as u64 - 1) >> sb_info.cluster_bits;
+
+            for _ in 0..num_clusters {
+                // Notably, these are not zeroed
+                fat_add_cluster(inode.deref_mut())?;
+            }
+
+            Ok(())
+        } else {
+            if end_offset <= inode.size_read() {
+                return Ok(());
+            }
+
+            // This is just an expanding truncate
+            fat_cont_expand(inode.deref_mut(), end_offset)
+        }
     }
+}
+
+fn fat_add_cluster(_inode: &mut Inode) -> Result {
+    unimplemented!()
+}
+fn fat_cont_expand(_inode: &mut Inode, length: bindings::loff_t) -> Result {
+    unimplemented!()
 }
