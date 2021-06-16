@@ -18,7 +18,7 @@ use crate::{
     io_buffer::{IoBufferReader, IoBufferWriter},
     iov_iter::IovIter,
     sync::CondVar,
-    types::PointerWrapper,
+    types::{Mode, PointerWrapper},
     user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
 };
 
@@ -310,6 +310,20 @@ unsafe extern "C" fn splice_write_callback<T: FileOperations>(
     }
 }
 
+unsafe extern "C" fn fallocate_callback<T: FileOperations>(
+    file: *mut bindings::file,
+    mode: c_types::c_int,
+    offset: bindings::loff_t,
+    length: bindings::loff_t,
+) -> c_types::c_long {
+    from_kernel_result! {
+        unsafe {
+            let f = &*((*file).private_data as *const T);
+            f.allocate_file(&FileRef::from_ptr(file), Mode::from_int(mode as _), offset, length).map(|()| 0)
+        }
+    }
+}
+
 pub(crate) struct FileOperationsVtable<A, T>(marker::PhantomData<A>, marker::PhantomData<T>);
 
 impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
@@ -339,7 +353,11 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
             None
         },
         copy_file_range: None,
-        fallocate: None,
+        fallocate: if T::TO_USE.allocate_file {
+            Some(fallocate_callback::<T>)
+        } else {
+            None
+        },
         fadvise: None,
         fasync: None,
         flock: None,
@@ -450,6 +468,9 @@ pub struct ToUse {
 
     /// The `splice_write` field of [`struct file_operations`].
     pub splice_write: bool,
+
+    /// The `fallocate` field of [`struct file_operations`].
+    pub allocate_file: bool,
 }
 
 /// A constant version where all values are to set to `false`, that is, all supported fields will
@@ -468,6 +489,7 @@ pub const USE_NONE: ToUse = ToUse {
     poll: false,
     splice_read: false,
     splice_write: false,
+    allocate_file: false,
 };
 
 /// Defines the [`FileOperations::TO_USE`] field based on a list of fields to be populated.
@@ -766,6 +788,19 @@ pub trait FileOperations: Send + Sync + Sized {
         _len: usize,
         _flags: u32,
     ) -> Result<usize> {
+        Err(Error::EINVAL)
+    }
+
+    /// Preallocate space for a file
+    ///
+    /// Corresponds to the `fallocate` function pointer in `struct file_operations`.
+    fn allocate_file(
+        &self,
+        _file: &File,
+        _mode: Mode,
+        _offset: bindings::loff_t,
+        _length: bindings::loff_t,
+    ) -> Result {
         Err(Error::EINVAL)
     }
 }

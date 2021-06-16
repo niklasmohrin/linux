@@ -12,6 +12,7 @@ use kernel::{
     iov_iter::IovIter,
     prelude::*,
     str::CStr,
+    types::Mode,
 };
 
 module! {
@@ -39,7 +40,8 @@ impl FileSystemBase for BS2Fat {
         _device_name: &CStr,
         data: Option<&mut Self::MountOptions>,
     ) -> Result<*mut bindings::dentry> {
-        libfs_functions::mount_bdev::<Self>(flags, data)
+        // libfs_functions::mount_bdev::<Self>(flags, data)
+        unimplemented!()
     }
 
     fn kill_super(sb: &mut SuperBlock) {
@@ -76,7 +78,7 @@ struct Bs2FatFileOps;
 
 impl FileOperations for Bs2FatFileOps {
     declare_file_operations!(
-        release,
+        // release, // always used
         read_iter,
         write_iter,
         seek,
@@ -85,8 +87,8 @@ impl FileOperations for Bs2FatFileOps {
         fsync,
         mmap,
         splice_read,
-        splice_write
-        // allocate_file,
+        splice_write,
+        allocate_file
     );
 
     fn release(_obj: Self::Wrapper, _file: &File) {
@@ -143,8 +145,13 @@ impl FileOperations for Bs2FatFileOps {
         libfs_functions::iter_file_splice_write(pipe, file, pos, len, flags)
     }
 
-    // fn allocate_file(&self /* ... */) /* -> ? */
-    // {
-    //     unimplemented!()
-    // }
+    fn allocate_file(
+        &self,
+        _file: &File,
+        _mode: Mode,
+        _offset: bindings::loff_t,
+        _length: bindings::loff_t,
+    ) -> Result {
+        unimplemented!()
+    }
 }
