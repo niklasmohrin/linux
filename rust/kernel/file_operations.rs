@@ -616,6 +616,9 @@ impl FileTimeFlags {
 macro_rules! impl_flag_methods {
     ($T:ty, $V:ty) => {
         impl $T {
+            pub const fn empty() -> Self {
+                Self(0)
+            }
             pub const fn from_int(val: $V) -> Self {
                 Self(val)
             }

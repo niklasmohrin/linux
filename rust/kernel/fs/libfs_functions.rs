@@ -292,6 +292,11 @@ pub fn __set_page_dirty_nobuffers(page: &mut Page) -> Result<bool> {
         .map(|x| x != 0)
 }
 
+pub fn generic_cont_expand_simple(inode: &mut Inode, size: bindings::loff_t) -> Result {
+    Error::parse_int(unsafe { bindings::block_read_full_page(inode.as_ptr_mut(), size) })
+        .map(|_| ())
+}
+
 crate::declare_c_vtable!(
     SimpleDirOperations,
     bindings::file_operations,

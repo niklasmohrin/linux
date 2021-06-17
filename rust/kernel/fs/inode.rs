@@ -2,11 +2,16 @@ use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut};
 use core::{mem, ptr};
 
-use crate::bindings;
-use crate::fs::super_block::SuperBlock;
-use crate::fs::BuildVtable;
-use crate::print::ExpectK;
-use crate::types::{Dev, Mode};
+use crate::{
+    bindings,
+    c_types::*,
+    error::Error,
+    fs::super_block::SuperBlock,
+    fs::BuildVtable,
+    print::ExpectK,
+    types::{Dev, Mode},
+    Result,
+};
 
 #[derive(PartialEq, Eq)]
 pub enum UpdateATime {
@@ -20,6 +25,11 @@ pub enum UpdateCTime {
 }
 #[derive(PartialEq, Eq)]
 pub enum UpdateMTime {
+    Yes,
+    No,
+}
+#[derive(PartialEq, Eq)]
+pub enum WriteSync {
     Yes,
     No,
 }
@@ -44,7 +54,16 @@ impl Inode {
         Mode::from_int(self.i_mode)
     }
 
-    pub fn super_block(&mut self) -> &mut SuperBlock {
+    pub fn super_block(&self) -> &SuperBlock {
+        unsafe {
+            self.i_sb
+                .as_mut()
+                .expectk("Inode had NULL super block")
+                .as_mut()
+        }
+    }
+
+    pub fn super_block_mut(&mut self) -> &mut SuperBlock {
         unsafe {
             self.i_sb
                 .as_mut()
@@ -75,8 +94,28 @@ impl Inode {
         }
     }
 
+    pub fn is_sync(&self) -> bool {
+        // TODO: proper wrappers
+        const S_SYNC: u64 = 1;
+        const SB_SYNCHRONOUS: u64 = 16;
+        ((self.i_flags as u64 & S_SYNC) | (self.super_block().s_flags as u64 & SB_SYNCHRONOUS)) != 0
+    }
+
+    pub fn mark_dirty(&mut self) {
+        unimplemented!()
+    }
+
+    pub fn write_now(&mut self, sync: WriteSync) -> Result {
+        let sync = (sync == WriteSync::Yes) as c_int;
+        Error::parse_int(unsafe { bindings::write_inode_now(self.as_ptr_mut(), sync) }).map(|_| ())
+    }
+
+    pub fn current_time(&mut self) -> bindings::timespec64 {
+        unsafe { bindings::current_time(self.as_ptr_mut()) }
+    }
+
     pub fn update_acm_time(&mut self, a: UpdateATime, c: UpdateCTime, m: UpdateMTime) {
-        let time = unsafe { bindings::current_time(self.as_ptr_mut()) };
+        let time = self.current_time();
         if a == UpdateATime::Yes {
             self.i_atime = time;
         }
