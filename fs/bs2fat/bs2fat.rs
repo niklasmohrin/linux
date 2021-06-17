@@ -7,7 +7,7 @@ use kernel::{
     c_types::*,
     declare_file_operations,
     file::File,
-    file_operations::{FileAllocMode, FileOperations, IoctlCommand, SeekFrom},
+    file_operations::{FileAllocMode, FileOperations, FileTimeFlags, IoctlCommand, SeekFrom},
     fs::{
         inode::Inode, kiocb::Kiocb, libfs_functions, super_block::SuperBlock, FileSystemBase,
         FileSystemType,
@@ -31,6 +31,9 @@ module! {
 /* Characters that are undesirable in an MS-DOS file name */
 const BAD_CHARS: &[u8] = b"*?<>|\"";
 const BAD_IF_STRICT: &[u8] = b"+=,; ";
+
+const SECS_PER_MIN: usize = 60;
+const SECS_PER_DAY: usize = 60 * 60 * 24;
 
 struct BS2Fat;
 
@@ -82,6 +85,23 @@ impl Drop for BS2Fat {
 struct BS2FatSuperOps {
     cluster_bits: usize, // I made up the types
     cluster_size: usize,
+    options: BS2FatMountOptions,
+}
+
+struct BS2FatMountOptions {
+    timezone_set: bool,
+    time_offset: isize,
+}
+
+impl BS2FatSuperOps {
+    pub fn timezone_offset(&self) -> isize {
+        let minutes = if self.options.timezone_set {
+            -self.options.time_offset
+        } else {
+            sys_tz.tz_minuteswest
+        };
+        minutes * SECS_PER_MIN
+    }
 }
 
 struct BS2FatFileOps;
@@ -206,6 +226,65 @@ impl FileOperations for BS2FatFileOps {
 fn fat_add_cluster(_inode: &mut Inode) -> Result {
     unimplemented!()
 }
-fn fat_cont_expand(_inode: &mut Inode, length: bindings::loff_t) -> Result {
-    unimplemented!()
+
+fn fat_cont_expand(inode: &mut Inode, size: bindings::loff_t) -> Result {
+    libfs_functions::generic_cont_expand_simple(inode, size)?;
+    fat_truncate_time(inode, None, FileTimeFlags::C | FileTimeFlags::M);
+    inode.mark_dirty();
+
+    if !inode.is_sync() {
+        return Ok(());
+    }
+
+    // niklas: This is odd, they only use count as start + count - 1 which is just size - 1
+    let start = inode.i_size;
+    let count = size - inode.i_size;
+
+    // Opencode syncing since we don't have a file open to use standard fsync path.
+    libfs_functions::filemap_fdate_write_range(mapping, start, start + count - 1)
+        .and(libfs_functions::sync_mapping_buffers(mapping))
+        .and(inode.write_now(WriteSync::Yes))
+        .and_then(|()| libfs_functions::filemap_fdatawait_range(mapping, start, start + count - 1))
+}
+
+/// truncate the various times with appropriate granularity:
+///   root inode:
+///     all times always 0
+///   all other inodes:
+///     mtime - 2 seconds
+///     ctime
+///       msdos - 2 seconds
+///       vfat  - 10 milliseconds // niklas: we don't care
+///     atime - 24 hours (00:00:00 in local timezone)
+fn fat_truncate_time(inode: &mut Inode, now: Option<&bindings::timespec64>, flags: FileTimeFlags) {
+    if inode.i_ino == FAT_ROOT_INO {
+        return;
+    }
+
+    let now = now.unwrap_or_else(|| &inode.current_time());
+
+    if flags.has(FileTimeFlags::A) {
+        let sb_info = todo!(); // see allocate file
+        let tz_offset = sb_info.timezone_offset();
+        let seconds = now.tv_sec - tz_offset;
+        let seconds = seconds + tz_offset - (seconds % SECS_PER_DAY);
+        inode.i_atime = bindings::timespec64 {
+            tv_sec: seconds,
+            tv_nsec: 0,
+        };
+    }
+    if flags.has(FileTimeFlags::C) {
+        // niklas: I didn't bother to add the check for vfat
+        inode.i_ctime = fat_timespec64_trunc_2secs(*now);
+    }
+    if flags.has(FileTimeFlags::M) {
+        inode.i_mtime = fat_timespec64_trunc_2secs(*now);
+    }
+}
+
+fn fat_timespec64_trunc_2secs(ts: bindings::timespec64) -> bindings::timespec64 {
+    bindings::timespec64 {
+        tv_sec: ts.tv_sec & !0b1,
+        tv_nsec: 0,
+    }
 }

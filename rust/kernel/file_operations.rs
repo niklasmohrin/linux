@@ -595,30 +595,48 @@ pub struct FileAllocMode(u8);
 impl FileAllocMode {
     pub const KEEP_SIZE: Self      = Self::from_int(0x01);
     pub const PUNCH_HOLE: Self     = Self::from_int(0x02);
-    pub const NO_HIDE_STALE: Self   = Self::from_int(0x04);
+    pub const NO_HIDE_STALE: Self  = Self::from_int(0x04);
     pub const COLLAPSE_RANGE: Self = Self::from_int(0x08);
     pub const ZERO_RANGE: Self     = Self::from_int(0x10);
     pub const INSERT_RANGE: Self   = Self::from_int(0x20);
     pub const UNSHARE_RANGE: Self  = Self::from_int(0x40);
 }
 
-impl FileAllocMode {
-    pub const fn from_int(val: u8) -> Self {
-        Self(val)
-    }
-    pub const fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-    pub const fn has(self, other: Self) -> bool {
-        self.0 & other.0 != 0
-    }
-    pub const fn with(self, other: Self) -> Self {
-        Self(self.0 | other.0)
-    }
-    pub const fn without(self, other: Self) -> Self {
-        Self(self.0 & !other.0)
-    }
+#[derive(Debug, Clone, Copy)]
+pub struct FileTimeFlags(u8);
+
+#[rustfmt::skip]
+impl FileTimeFlags {
+    pub const A: Self       = Self::from_int(1);
+    pub const M: Self       = Self::from_int(2);
+    pub const C: Self       = Self::from_int(4);
+    pub const VERSION: Self = Self::from_int(8);
 }
+
+macro_rules! impl_flag_methods {
+    ($T:ty, $V:ty) => {
+        impl $T {
+            pub const fn from_int(val: $V) -> Self {
+                Self(val)
+            }
+            pub const fn is_empty(self) -> bool {
+                self.0 == 0
+            }
+            pub const fn has(self, other: Self) -> bool {
+                self.0 & other.0 != 0
+            }
+            pub const fn with(self, other: Self) -> Self {
+                Self(self.0 | other.0)
+            }
+            pub const fn without(self, other: Self) -> Self {
+                Self(self.0 & !other.0)
+            }
+        }
+    };
+}
+
+impl_flag_methods!(FileAllocMode, u8);
+impl_flag_methods!(FileTimeFlags, u8);
 
 /// Trait for extracting file open arguments from kernel data structures.
 ///
