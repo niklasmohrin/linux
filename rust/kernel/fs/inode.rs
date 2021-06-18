@@ -13,6 +13,13 @@ use crate::{
     Result,
 };
 
+extern "C" {
+    fn rust_helper_inode_lock(inode: *mut bindings::inode);
+    fn rust_helper_inode_unlock(inode: *mut bindings::inode);
+    fn rust_helper_mark_inode_dirty(inode: *mut bindings::inode);
+    fn rust_helper_i_size_read(inode: *const bindings::inode) -> bindings::loff_t;
+}
+
 #[derive(PartialEq, Eq)]
 pub enum UpdateATime {
     Yes,
@@ -38,6 +45,10 @@ pub enum WriteSync {
 pub struct Inode(bindings::inode);
 
 impl Inode {
+    pub fn as_ptr(&self) -> *const bindings::inode {
+        self.deref() as *const _
+    }
+
     pub fn as_ptr_mut(&mut self) -> *mut bindings::inode {
         self.deref_mut() as *mut _
     }
@@ -102,7 +113,9 @@ impl Inode {
     }
 
     pub fn mark_dirty(&mut self) {
-        unimplemented!()
+        unsafe {
+            rust_helper_mark_inode_dirty(self.as_ptr_mut());
+        }
     }
 
     pub fn write_now(&mut self, sync: WriteSync) -> Result {
@@ -171,8 +184,7 @@ impl Inode {
     }
 
     pub fn size_read(&self) -> bindings::loff_t {
-        // niklas: off, another inline function (include/linux/fs.h, 831)
-        unimplemented!()
+        unsafe { rust_helper_i_size_read(self.as_ptr()) }
     }
 
     pub fn lock(&mut self) -> LockGuard<'_> {
@@ -186,9 +198,8 @@ pub struct LockGuard<'a> {
 
 impl<'a> LockGuard<'a> {
     pub fn new(inner: &'a mut Inode) -> Self {
-        todo!("another inline function, don't forget to impl before using this");
         unsafe {
-            // bindings::inode_lock(inner.as_ptr_mut());
+            rust_helper_inode_lock(inner.as_ptr_mut());
         }
         Self { inner }
     }
@@ -196,9 +207,8 @@ impl<'a> LockGuard<'a> {
 
 impl<'a> Drop for LockGuard<'a> {
     fn drop(&mut self) {
-        todo!("another inline function, don't forget to impl before using this");
         unsafe {
-            // bindings::inode_unlock(self.inner.as_ptr_mut());
+            rust_helper_inode_unlock(self.inner.as_ptr_mut());
         }
     }
 }

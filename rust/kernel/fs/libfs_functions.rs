@@ -17,6 +17,14 @@ use crate::{
     Result,
 };
 
+extern "C" {
+    fn rust_helper_generic_cont_expand_simple(
+        inode: *mut bindings::inode,
+        size: bindings::loff_t,
+    ) -> c_int;
+    fn rust_helper_sync_mapping_buffers(mapping: *mut bindings::address_space) -> c_int;
+}
+
 pub fn generic_file_read_iter(iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
     Error::parse_int(unsafe { bindings::generic_file_read_iter(iocb.as_ptr_mut(), iter.ptr) as _ })
 }
@@ -293,8 +301,28 @@ pub fn __set_page_dirty_nobuffers(page: &mut Page) -> Result<bool> {
 }
 
 pub fn generic_cont_expand_simple(inode: &mut Inode, size: bindings::loff_t) -> Result {
-    Error::parse_int(unsafe { bindings::block_read_full_page(inode.as_ptr_mut(), size) })
+    Error::parse_int(unsafe { rust_helper_generic_cont_expand_simple(inode.as_ptr_mut(), size) })
         .map(|_| ())
+}
+
+pub fn filemap_fdatawrite_range(
+    mapping: *mut bindings::address_space,
+    start: bindings::loff_t,
+    end: bindings::loff_t,
+) -> Result {
+    Error::parse_int(unsafe { bindings::filemap_fdatawrite_range(mapping, start, end) }).map(|_| ())
+}
+
+pub fn filemap_fdatawait_range(
+    mapping: *mut bindings::address_space,
+    start: bindings::loff_t,
+    end: bindings::loff_t,
+) -> Result {
+    Error::parse_int(unsafe { bindings::filemap_fdatawait_range(mapping, start, end) }).map(|_| ())
+}
+
+pub fn sync_mapping_buffers(mapping: *mut bindings::address_space) -> Result {
+    Error::parse_int(unsafe { rust_helper_sync_mapping_buffers(mapping) }).map(|_| ())
 }
 
 crate::declare_c_vtable!(

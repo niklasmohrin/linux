@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#include <linux/buffer_head.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
 #include <linux/sched/signal.h>
@@ -16,12 +17,14 @@ void rust_helper_BUG(void)
 	BUG();
 }
 
-unsigned long rust_helper_copy_from_user(void *to, const void __user *from, unsigned long n)
+unsigned long rust_helper_copy_from_user(void *to, const void __user *from,
+					 unsigned long n)
 {
 	return copy_from_user(to, from, n);
 }
 
-unsigned long rust_helper_copy_to_user(void __user *to, const void *from, unsigned long n)
+unsigned long rust_helper_copy_to_user(void __user *to, const void *from,
+				       unsigned long n)
 {
 	return copy_to_user(to, from, n);
 }
@@ -102,7 +105,8 @@ size_t rust_helper_copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
 }
 EXPORT_SYMBOL_GPL(rust_helper_copy_from_iter);
 
-size_t rust_helper_copy_to_iter(const void *addr, size_t bytes, struct iov_iter *i)
+size_t rust_helper_copy_to_iter(const void *addr, size_t bytes,
+				struct iov_iter *i)
 {
 	return copy_to_iter(addr, bytes, i);
 }
@@ -147,11 +151,9 @@ EXPORT_SYMBOL_GPL(rust_helper_mutex_lock);
  * your platform such that size_t matches uintptr_t (i.e., to increase
  * size_t, because uintptr_t has to be at least as big as size_t).
 */
-static_assert(
-	sizeof(size_t) == sizeof(uintptr_t) &&
-	__alignof__(size_t) == __alignof__(uintptr_t),
-	"Rust code expects C size_t to match Rust usize"
-);
+static_assert(sizeof(size_t) == sizeof(uintptr_t) &&
+		      __alignof__(size_t) == __alignof__(uintptr_t),
+	      "Rust code expects C size_t to match Rust usize");
 
 void rust_helper_dget(struct dentry *dentry)
 {
@@ -174,8 +176,44 @@ EXPORT_SYMBOL_GPL(rust_helper_mapping_set_gfp_mask);
 const gfp_t RUST_HELPER_GFP_HIGHUSER = GFP_HIGHUSER;
 EXPORT_SYMBOL_GPL(RUST_HELPER_GFP_HIGHUSER);
 
+int rust_helper_generic_cont_expand_simple(struct inode *inode, loff_t size)
+{
+	return generic_cont_expand_simple(inode, size);
+}
+EXPORT_SYMBOL_GPL(rust_helper_generic_cont_expand_simple);
+
+int rust_helper_sync_mapping_buffers(struct address_space *mapping)
+{
+	return sync_mapping_buffers(mapping);
+}
+EXPORT_SYMBOL_GPL(rust_helper_sync_mapping_buffers);
+
+void rust_helper_inode_lock(struct inode *inode)
+{
+	inode_lock(inode);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inode_lock);
+
+void rust_helper_inode_unlock(struct inode *inode)
+{
+	inode_unlock(inode);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inode_unlock);
+
+void rust_helper_mark_inode_dirty(struct inode *inode)
+{
+	mark_inode_dirty(inode);
+}
+EXPORT_SYMBOL_GPL(rust_helper_mark_inode_dirty);
+
+loff_t rust_helper_i_size_read(const struct inode *inode)
+{
+	return i_size_read(inode);
+}
+EXPORT_SYMBOL_GPL(rust_helper_i_size_read);
+
 #if !defined(CONFIG_ARM)
 // See https://github.com/rust-lang/rust-bindgen/issues/1671
 static_assert(__builtin_types_compatible_p(size_t, uintptr_t),
-	"size_t must match uintptr_t, what architecture is this??");
+	      "size_t must match uintptr_t, what architecture is this??");
 #endif

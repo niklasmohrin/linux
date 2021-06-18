@@ -103,7 +103,7 @@ impl BS2FatSuperOps {
         let minutes = if self.options.timezone_set {
             -self.options.time_offset
         } else {
-            bindings::sys_tz.tz_minuteswest as _
+            unsafe { bindings::sys_tz }.tz_minuteswest as _
         };
         minutes * SECS_PER_MIN
     }
@@ -253,7 +253,7 @@ fn fat_cont_expand(inode: &mut Inode, size: bindings::loff_t) -> Result {
     let mapping = inode.i_mapping;
 
     // Opencode syncing since we don't have a file open to use standard fsync path.
-    libfs_functions::filemap_fdate_write_range(mapping, start, start + count - 1)
+    libfs_functions::filemap_fdatawrite_range(mapping, start, start + count - 1)
         .and(libfs_functions::sync_mapping_buffers(mapping))
         .and(inode.write_now(WriteSync::Yes))
         .and_then(|()| libfs_functions::filemap_fdatawait_range(mapping, start, start + count - 1))
@@ -268,12 +268,13 @@ fn fat_cont_expand(inode: &mut Inode, size: bindings::loff_t) -> Result {
 ///       msdos - 2 seconds
 ///       vfat  - 10 milliseconds // niklas: we don't care
 ///     atime - 24 hours (00:00:00 in local timezone)
-fn fat_truncate_time(inode: &mut Inode, now: Option<&bindings::timespec64>, flags: FileTimeFlags) {
+fn fat_truncate_time(inode: &mut Inode, now: Option<bindings::timespec64>, flags: FileTimeFlags) {
     if inode.i_ino == FAT_ROOT_INO {
         return;
     }
 
-    let now = now.unwrap_or_else(|| &inode.current_time());
+    // niklas: I changed the signature to take `now` by value, because we only read from it anyways
+    let now = now.unwrap_or_else(|| inode.current_time());
 
     if flags.has(FileTimeFlags::A) {
         let sb_info: &BS2FatSuperOps = todo!(); // see allocate file
@@ -287,10 +288,10 @@ fn fat_truncate_time(inode: &mut Inode, now: Option<&bindings::timespec64>, flag
     }
     if flags.has(FileTimeFlags::C) {
         // niklas: I didn't bother to add the check for vfat
-        inode.i_ctime = fat_timespec64_trunc_2secs(*now);
+        inode.i_ctime = fat_timespec64_trunc_2secs(now);
     }
     if flags.has(FileTimeFlags::M) {
-        inode.i_mtime = fat_timespec64_trunc_2secs(*now);
+        inode.i_mtime = fat_timespec64_trunc_2secs(now);
     }
 }
 
