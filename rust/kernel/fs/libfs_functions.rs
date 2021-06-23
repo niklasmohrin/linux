@@ -35,6 +35,16 @@ pub fn generic_file_write_iter(iocb: &mut Kiocb, iter: &mut IovIter) -> Result<u
     Error::parse_int(unsafe { bindings::generic_file_write_iter(iocb.as_ptr_mut(), iter.ptr) as _ })
 }
 
+pub fn generic_file_fsync(
+    file: &mut File,
+    start: bindings::loff_t,
+    end: bindings::loff_t,
+    datasync: i32,
+) -> Result {
+    Error::parse_int(unsafe { bindings::generic_file_fsync(file.ptr, start, end, datasync) })
+        .map(|_| ())
+}
+
 pub fn compat_ptr_ioctl(file: &File, cmd: &mut IoctlCommand) -> Result<i32> {
     let (cmd, arg) = cmd.raw();
     Error::parse_int(unsafe { bindings::compat_ptr_ioctl(file.ptr, cmd, arg as _) }).map(|x| x as _)
@@ -337,6 +347,15 @@ pub fn release_buffer(buffer_head: &mut BufferHead) {
     unsafe {
         rust_helper_brelse(buffer_head.as_ptr_mut());
     }
+}
+
+pub fn sync_inode_metadata(inode: &mut Inode, wait: u32) -> Result {
+    Error::parse_int(unsafe { bindings::sync_inode_metadata(inode.as_ptr_mut(), wait as _) })
+        .map(|_| ())
+}
+
+pub fn filemap_flush(mapping: &mut AddressSpace) -> Result {
+    Error::parse_int(unsafe { bindings::filemap_flush(mapping as *mut _) }).map(|_| ())
 }
 
 crate::declare_c_vtable!(

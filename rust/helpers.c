@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <asm/unaligned.h>
+#include <linux/backing-dev.h>
 #include <linux/buffer_head.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
-#include <linux/sched/signal.h>
+#include <linux/errname.h>
 #include <linux/gfp.h>
 #include <linux/highmem.h>
+#include <linux/mutex.h>
 #include <linux/pagemap.h>
+#include <linux/sched/signal.h>
 #include <linux/uaccess.h>
 #include <linux/uio.h>
-#include <linux/errname.h>
-#include <linux/mutex.h>
 
 void rust_helper_BUG(void)
 {
@@ -254,3 +255,12 @@ EXPORT_SYMBOL_GPL(rust_helper_le32_to_cpu);
 static_assert(__builtin_types_compatible_p(size_t, uintptr_t),
 	      "size_t must match uintptr_t, what architecture is this??");
 #endif
+
+long rust_helper_congestion_wait(int sync, long timeout)
+{
+	return congestion_wait(sync, timeout);
+}
+EXPORT_SYMBOL_GPL(rust_helper_congestion_wait);
+
+const long RUST_HELPER_HZ = HZ;
+EXPORT_SYMBOL_GPL(RUST_HELPER_HZ);
