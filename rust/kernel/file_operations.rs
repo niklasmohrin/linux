@@ -613,6 +613,71 @@ impl FileTimeFlags {
     pub const VERSION: Self = Self::from_int(8);
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct FMode(u32);
+
+impl FMode {
+    // copied from include/linux/fs.h
+    /* file is open for reading */
+    pub const FMODE_READ: Self = Self::from_int(0x1);
+    /* file is open for writing */
+    pub const FMODE_WRITE: Self = Self::from_int(0x2);
+    /* file is seekable */
+    pub const FMODE_LSEEK: Self = Self::from_int(0x4);
+    /* file can be accessed using pread */
+    pub const FMODE_PREAD: Self = Self::from_int(0x8);
+    /* file can be accessed using pwrite */
+    pub const FMODE_PWRITE: Self = Self::from_int(0x10);
+    /* File is opened for execution with sys_execve / sys_uselib */
+    pub const FMODE_EXEC: Self = Self::from_int(0x20);
+    /* File is opened with O_NDELAY (only set for block devices) */
+    pub const FMODE_NDELAY: Self = Self::from_int(0x40);
+    /* File is opened with O_EXCL (only set for block devices) */
+    pub const FMODE_EXCL: Self = Self::from_int(0x80);
+    /* File is opened using open(.., 3, ..) and is writeable only for ioctls
+    (specialy hack for floppy.c) */
+    pub const FMODE_WRITE_IOCTL: Self = Self::from_int(0x100);
+    /* 32bit hashes as llseek() offset (for directories) */
+    pub const FMODE_32BITHASH: Self = Self::from_int(0x200);
+    /* 64bit hashes as llseek() offset (for directories) */
+    pub const FMODE_64BITHASH: Self = Self::from_int(0x400);
+    /*
+     * Don't update ctime and mtime.
+     *
+     * Currently a special hack for the XFS open_by_handle ioctl, but we'll
+     * hopefully graduate it to a proper O_CMTIME flag supported by open(2) soon.
+     */
+    pub const FMODE_NOCMTIME: Self = Self::from_int(0x800);
+    /* Expect random access pattern */
+    pub const FMODE_RANDOM: Self = Self::from_int(0x1000);
+    /* File is huge (eg. /dev/kmem): treat loff_t as unsigned */
+    pub const FMODE_UNSIGNED_OFFSET: Self = Self::from_int(0x2000);
+    /* File is opened with O_PATH; almost nothing can be done with it */
+    pub const FMODE_PATH: Self = Self::from_int(0x4000);
+    /* File needs atomic accesses to f_pos */
+    pub const FMODE_ATOMIC_POS: Self = Self::from_int(0x8000);
+    /* Write access to underlying fs */
+    pub const FMODE_WRITER: Self = Self::from_int(0x10000);
+    /* Has read method(s) */
+    pub const FMODE_CAN_READ: Self = Self::from_int(0x20000);
+    /* Has write method(s) */
+    pub const FMODE_CAN_WRITE: Self = Self::from_int(0x40000);
+    pub const FMODE_OPENED: Self = Self::from_int(0x80000);
+    pub const FMODE_CREATED: Self = Self::from_int(0x100000);
+    /* File is stream-like */
+    pub const FMODE_STREAM: Self = Self::from_int(0x200000);
+    /* File was opened by fanotify and shouldn't generate fanotify events */
+    pub const FMODE_NONOTIFY: Self = Self::from_int(0x4000000);
+    /* File is capable of returning -EAGAIN if I/O will block */
+    pub const FMODE_NOWAIT: Self = Self::from_int(0x8000000);
+    /* File represents mount that needs unmounting */
+    pub const FMODE_NEED_UNMOUNT: Self = Self::from_int(0x10000000);
+    /* File does not contribute to nr_files count */
+    pub const FMODE_NOACCOUNT: Self = Self::from_int(0x20000000);
+    /* File supports async buffered reads */
+    pub const FMODE_BUF_RASYNC: Self = Self::from_int(0x40000000);
+}
+
 macro_rules! impl_flag_methods {
     ($T:ty, $V:ty) => {
         impl $T {
@@ -640,6 +705,7 @@ macro_rules! impl_flag_methods {
 
 impl_flag_methods!(FileAllocMode, u8);
 impl_flag_methods!(FileTimeFlags, u8);
+impl_flag_methods!(FMode, u32);
 
 /// Trait for extracting file open arguments from kernel data structures.
 ///
