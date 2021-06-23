@@ -58,7 +58,7 @@ impl FileSystemBase for BS2Fat {
     }
 
     fn kill_super(sb: &mut SuperBlock) {
-        unimplemented!()
+        libfs_functions::kill_block_super(sb);
     }
 
     fn fill_super(

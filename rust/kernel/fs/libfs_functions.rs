@@ -245,6 +245,12 @@ pub fn kill_litter_super(sb: &mut SuperBlock) {
     }
 }
 
+pub fn kill_block_super(sb: &mut SuperBlock) {
+    unsafe {
+        bindings::kill_block_super(sb.as_ptr_mut());
+    }
+}
+
 pub fn simple_readpage(file: &File, page: &mut Page) -> Result {
     Error::parse_int(unsafe { bindings::simple_readpage(file.ptr, page as *mut _) }).map(|_| ())
 }
