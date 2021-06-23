@@ -1,9 +1,7 @@
 use alloc::boxed::Box;
-use core::mem;
-use core::ops::{Deref, DerefMut};
+use core::{mem, ops::{Deref, DerefMut}};
 
-use crate::bindings;
-use crate::fs::super_operations::{SuperOperations, SuperOperationsVtable};
+use crate::{bindings, fs::super_operations::{SuperOperations, SuperOperationsVtable}, Result};
 
 #[repr(transparent)]
 pub struct SuperBlock(bindings::super_block);
@@ -13,9 +11,10 @@ impl SuperBlock {
         self.deref_mut() as *mut _
     }
 
-    pub fn set_super_operations<OPS: SuperOperations>(&mut self, ops: OPS) {
+    pub fn set_super_operations<OPS: SuperOperations>(&mut self, ops: OPS) -> Result {
         self.s_op = unsafe { SuperOperationsVtable::<OPS>::build() };
-        self.s_fs_info = Box::leak(Box::new(ops)) as *mut _ as *mut _;
+        self.s_fs_info = Box::into_raw(Box::try_new(ops)?).cast();
+        Ok(())
     }
 }
 

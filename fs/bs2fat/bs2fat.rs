@@ -14,6 +14,9 @@ use kernel::{
         libfs_functions,
         super_block::SuperBlock,
         FileSystemBase, FileSystemType,
+        inode::Inode, kiocb::Kiocb, libfs_functions, super_block::SuperBlock, FileSystemBase,
+        super_operations::SuperOperations,
+        FileSystemType,
     },
     iov_iter::IovIter,
     prelude::*,
@@ -37,24 +40,29 @@ const BAD_IF_STRICT: &[u8] = b"+=,; ";
 
 const SECS_PER_MIN: i64 = 60;
 const SECS_PER_DAY: i64 = 60 * 60 * 24;
-
 const FAT_ROOT_INO: u64 = 1;
+const MSDOS_SUPER_MAGIC = 0x4d44;
 
 struct BS2Fat;
 
+enum FillSuperInnerResult {
+    Ok,
+    Invalid,
+    Fail,
+}
+
 impl FileSystemBase for BS2Fat {
     const NAME: &'static CStr = kernel::c_str!("bs2fat");
-    const FS_FLAGS: c_int = bindings::FS_USERNS_MOUNT as _;
+    const FS_FLAGS: c_int = (bindings::FS_REQUIRES_DEV | bindings::FS_ALLOW_IDMAP) as _;
     const OWNER: *mut bindings::module = ptr::null_mut();
 
     fn mount(
         _fs_type: &'_ mut FileSystemType,
         flags: c_int,
-        _device_name: &CStr,
+        device_name: &CStr,
         data: Option<&mut Self::MountOptions>,
     ) -> Result<*mut bindings::dentry> {
-        // libfs_functions::mount_bdev::<Self>(flags, data)
-        unimplemented!()
+        libfs_functions::mount_bdev::<Self>(flags, device_name, data)
     }
 
     fn kill_super(sb: &mut SuperBlock) {
@@ -66,8 +74,16 @@ impl FileSystemBase for BS2Fat {
         _data: Option<&mut Self::MountOptions>,
         _silent: c_int,
     ) -> Result {
-        // sb.s_magic = BS2FAT_MAGIC;
-        unimplemented!()
+        let res = || {
+            sb.s_flags |= bindings::SB_NODIRATIME;
+            sb.s_magic = MSDOS_SUPER_MAGIC;
+            let ops = BS2FatSuperOps::default();
+            sb.set_super_operations(ops)?;
+            // sb.s_export_op = &fat_export_ops; // FIXME
+            sb.s_time_gran = 1;
+            // sbi.nfs_build_inode_lock = Mutex::ratelimit_state_init(ops.ratelimit, DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST); // FIXME
+            parse_options(sb, data, isvfat, silent, &debug, ops.options)?.map(Fail)
+        };
     }
 }
 
@@ -87,12 +103,19 @@ impl Drop for BS2Fat {
     }
 }
 
+#[derive(Default)]
 struct BS2FatSuperOps {
-    cluster_bits: usize, // I made up the types
+    cluster_bits: u16,
     cluster_size: usize,
     options: BS2FatMountOptions,
+    // nfs_build_inode_lock: Mutex,
 }
 
+impl SuperOperations for BS2FatSuperOps {
+    kernel::declare_super_operations!();
+}
+
+#[derive(Default)]
 struct BS2FatMountOptions {
     timezone_set: bool,
     time_offset: i64,
