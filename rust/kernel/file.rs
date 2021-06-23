@@ -47,6 +47,18 @@ impl File {
         unsafe { (*self.ptr).f_flags & bindings::O_NONBLOCK == 0 }
     }
 
+    pub fn inode(&self) -> &mut Inode {
+        unsafe {
+            self.ptr
+                .as_mut()
+                .expectk("File::ptr was null")
+                .f_inode
+                .as_mut()
+                .expectk("File had NULL inode")
+                .as_mut()
+        }
+    }
+
     pub fn host_inode(&self) -> &mut Inode {
         unsafe {
             self.ptr

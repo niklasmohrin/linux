@@ -8,7 +8,9 @@ use kernel::{
     c_types::*,
     declare_file_operations,
     file::File,
-    file_operations::{FileAllocMode, FileOperations, FileTimeFlags, IoctlCommand, SeekFrom},
+    file_operations::{
+        FMode, FileAllocMode, FileOperations, FileTimeFlags, IoctlCommand, SeekFrom,
+    },
     fs::{
         inode::{Inode, WriteSync},
         kiocb::Kiocb,
@@ -49,7 +51,20 @@ const SECS_PER_DAY: i64 = 60 * 60 * 24;
 const FAT_ROOT_INO: u64 = 1;
 const MSDOS_SUPER_MAGIC: u64 = 0x4d44;
 
+extern "C" {
+    static RUST_HELPER_HZ: c_long;
+    fn rust_helper_congestion_wait(sync: c_int, timeout: c_long) -> c_long;
+}
+
 struct BS2Fat;
+
+type Cluster = u32;
+
+// TODO: include/linux/backing-dev-defs.h, doesnt exist in bindgen
+enum BLK_RW {
+    ASYNC = 0,
+    SYNC = 1,
+}
 
 impl FileSystemBase for BS2Fat {
     const NAME: &'static CStr = kernel::c_str!("bs2fat");
@@ -176,7 +191,7 @@ struct BootSector {
     _system_id: [u8; 8],
     sector_size: [u8; 2],
     sec_per_clus: u8,
-    reserved: u16, // niklas: in C, this is explicitly little endian, but the type aliases for both endianneses (?) are identical
+    reserved: u16, /* niklas: in C, this is explicitly little endian, but the type aliases for both endianneses (?) are identical */
     fats: u8,
     dir_entries: [u8; 2],
     sectors: [u8; 2],
@@ -301,6 +316,7 @@ impl SuperOperations for BS2FatSuperOps {
 struct BS2FatMountOptions {
     timezone_set: bool,
     time_offset: i64,
+    flush: bool,
 }
 
 impl BS2FatSuperOps {
@@ -331,8 +347,17 @@ impl FileOperations for BS2FatFileOps {
         allocate_file
     );
 
-    fn release(_obj: Self::Wrapper, _file: &File) {
-        unimplemented!()
+    fn release(_obj: Self::Wrapper, file: &File) {
+        // Assumption: Inode stems from file (! please verify); TODO:
+        let inode: &mut Inode = file.inode();
+        if file.fmode().has(FMode::FMODE_WRITE)
+            && msdos_sb(inode.super_block_mut())
+                .map(|x| x.options.flush)
+                .unwrap_or(false)
+        {
+            fat_flush_inodes(inode.super_block_mut(), Some(inode), None);
+            rust_helper_congestion_wait(BLK_RW::ASYNC as _, RUST_HELPER_HZ / 10);
+        }
     }
 
     fn read_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
@@ -355,7 +380,17 @@ impl FileOperations for BS2FatFileOps {
         libfs_functions::compat_ptr_ioctl(file, cmd)
     }
 
-    fn fsync(&self, _file: &File, _start: u64, _end: u64, _datasync: bool) -> Result<u32> {
+    fn fsync(&self, file: &File, start: u64, end: u64, datasync: bool) -> Result<u32> {
+        // let inode: inode = file.f_mapping.host;
+        // int err;
+
+        // libfs_functions::generic_file_fsync(filp, start, end, datasync);
+
+        // err = sync_mapping_buffers(MSDOS_SB(inode->i_sb)->fat_inode->i_mapping);
+        // if (err)
+        //     return err;
+
+        // return blkdev_issue_flush(inode->i_sb->s_bdev);
         unimplemented!()
     }
 
@@ -434,7 +469,276 @@ impl FileOperations for BS2FatFileOps {
     }
 }
 
+fn msdos_sb(sb: &mut SuperBlock) -> Option<&mut BS2FatSuperOps> {
+    // TODO: use own type for this void* field?
+    //&*((*sb).s_fs_info as *const T)
+    (sb.s_fs_info as *mut BS2FatSuperOps).as_mut()
+}
+
+fn fat_flush_inodes(sb: &mut SuperBlock, i1: Option<&mut Inode>, i2: Option<&mut Inode>) -> Result {
+    if !msdos_sb(sb).map(|x| x.options.flush).unwrap_or(false) {
+        ()
+    }
+    // TODO: return better fitting error?
+    i1.map(writeback_inode).ok_or(Error::EINVAL)?;
+    i2.map(writeback_inode).ok_or(Error::EINVAL)?;
+    libfs_functions::filemap_flush(sb.s_bdev.bd_inode.i_mapping) // TODO: write block_device struct, not in bindings
+}
+
+fn writeback_inode(inode: &mut Inode) -> Result {
+    /* if we used wait=1, sync_inode_metadata waits for the io for the
+     * inode to finish.  So wait=0 is sent down to sync_inode_metadata
+     * and filemap_fdatawrite is used for the data blocks
+     */
+    libfs_functions::sync_inode_metadata(inode, 0)?;
+    libfs_functions::filemap_fdatawrite(inode.mapping())
+}
+
+// fn fat_alloc_clusters(inode: &mut Inode, cluster: &mut Cluster, nr_cluster: u32)
+// {
+//     struct super_block *sb = inode->i_sb;
+//     struct msdos_sb_info *sbi = MSDOS_SB(sb);
+//     const struct fatent_operations *ops = sbi->fatent_ops;
+//     struct fat_entry fatent, prev_ent;
+//     struct buffer_head *bhs[MAX_BUF_PER_PAGE];
+//     int i, count, err, nr_bhs, idx_clus;
+
+//     BUG_ON(nr_cluster > (MAX_BUF_PER_PAGE / 2));    /* fixed limit */
+//     lock_fat(sbi);
+//     if (sbi->free_clusters != -1 && sbi->free_clus_valid &&
+//         sbi->free_clusters < nr_cluster) {
+//         unlock_fat(sbi);
+//         return -ENOSPC;
+//     }
+
+//     err = nr_bhs = idx_clus = 0;
+//     count = FAT_START_ENT;
+//     fatent_init(&prev_ent);
+//     fatent_init(&fatent);
+//     fatent_set_entry(&fatent, sbi->prev_free + 1);
+//     while (count < sbi->max_cluster) {
+//         if (fatent.entry >= sbi->max_cluster)
+//             fatent.entry = FAT_START_ENT;
+//         fatent_set_entry(&fatent, fatent.entry);
+//         err = fat_ent_read_block(sb, &fatent);
+//         if (err)
+//             goto out;
+
+//         /* Find the free entries in a block */
+//         do {
+//             if (ops->ent_get(&fatent) == FAT_ENT_FREE) {
+//                 int entry = fatent.entry;
+
+//                 /* make the cluster chain */
+//                 ops->ent_put(&fatent, FAT_ENT_EOF);
+//                 if (prev_ent.nr_bhs)
+//                     ops->ent_put(&prev_ent, entry);
+
+//                 fat_collect_bhs(bhs, &nr_bhs, &fatent);
+
+//                 sbi->prev_free = entry;
+//                 if (sbi->free_clusters != -1)
+//                     sbi->free_clusters--;
+
+//                 cluster[idx_clus] = entry;
+//                 idx_clus++;
+//                 if (idx_clus == nr_cluster)
+//                     goto out;
+
+//                 /*
+//                  * fat_collect_bhs() gets ref-count of bhs,
+//                  * so we can still use the prev_ent.
+//                  */
+//                 prev_ent = fatent;
+//             }
+//             count++;
+//             if (count == sbi->max_cluster)
+//                 break;
+//         } while (fat_ent_next(sbi, &fatent));
+//     }
+
+//     /* Couldn't allocate the free entries */
+//     sbi->free_clusters = 0;
+//     sbi->free_clus_valid = 1;
+//     err = -ENOSPC;
+
+// out:
+//     unlock_fat(sbi);
+//     mark_fsinfo_dirty(sb);
+//     fatent_brelse(&fatent);
+//     if (!err) {
+//         if (inode_needs_sync(inode))
+//             err = fat_sync_bhs(bhs, nr_bhs);
+//         if (!err)
+//             err = fat_mirror_bhs(sb, bhs, nr_bhs);
+//     }
+//     for (i = 0; i < nr_bhs; i++)
+//         brelse(bhs[i]);
+
+//     if (err && idx_clus)
+//         fat_free_clusters(inode, cluster[0]);
+
+//     return err;
+// }
+
+// int fat_free_clusters(struct inode *inode, int cluster)
+// {
+// 	struct super_block *sb = inode->i_sb;
+// 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
+// 	const struct fatent_operations *ops = sbi->fatent_ops;
+// 	struct fat_entry fatent;
+// 	struct buffer_head *bhs[MAX_BUF_PER_PAGE];
+// 	int i, err, nr_bhs;
+// 	int first_cl = cluster, dirty_fsinfo = 0;
+
+// 	nr_bhs = 0;
+// 	fatent_init(&fatent);
+// 	lock_fat(sbi);
+// 	do {
+// 		cluster = fat_ent_read(inode, &fatent, cluster);
+// 		if (cluster < 0) {
+// 			err = cluster;
+// 			goto error;
+// 		} else if (cluster == FAT_ENT_FREE) {
+// 			fat_fs_error(sb, "%s: deleting FAT entry beyond EOF",
+// 				     __func__);
+// 			err = -EIO;
+// 			goto error;
+// 		}
+
+// 		if (sbi->options.discard) {
+// 			/*
+// 			 * Issue discard for the sectors we no longer
+// 			 * care about, batching contiguous clusters
+// 			 * into one request
+// 			 */
+// 			if (cluster != fatent.entry + 1) {
+// 				int nr_clus = fatent.entry - first_cl + 1;
+
+// 				sb_issue_discard(sb,
+// 					fat_clus_to_blknr(sbi, first_cl),
+// 					nr_clus * sbi->sec_per_clus,
+// 					GFP_NOFS, 0);
+
+// 				first_cl = cluster;
+// 			}
+// 		}
+
+// 		ops->ent_put(&fatent, FAT_ENT_FREE);
+// 		if (sbi->free_clusters != -1) {
+// 			sbi->free_clusters++;
+// 			dirty_fsinfo = 1;
+// 		}
+
+// 		if (nr_bhs + fatent.nr_bhs > MAX_BUF_PER_PAGE) {
+// 			if (sb->s_flags & SB_SYNCHRONOUS) {
+// 				err = fat_sync_bhs(bhs, nr_bhs);
+// 				if (err)
+// 					goto error;
+// 			}
+// 			err = fat_mirror_bhs(sb, bhs, nr_bhs);
+// 			if (err)
+// 				goto error;
+// 			for (i = 0; i < nr_bhs; i++)
+// 				brelse(bhs[i]);
+// 			nr_bhs = 0;
+// 		}
+// 		fat_collect_bhs(bhs, &nr_bhs, &fatent);
+// 	} while (cluster != FAT_ENT_EOF);
+
+// 	if (sb->s_flags & SB_SYNCHRONOUS) {
+// 		err = fat_sync_bhs(bhs, nr_bhs);
+// 		if (err)
+// 			goto error;
+// 	}
+// 	err = fat_mirror_bhs(sb, bhs, nr_bhs);
+// error:
+// 	fatent_brelse(&fatent);
+// 	for (i = 0; i < nr_bhs; i++)
+// 		brelse(bhs[i]);
+// 	unlock_fat(sbi);
+// 	if (dirty_fsinfo)
+// 		mark_fsinfo_dirty(sb);
+
+// 	return err;
+// }
+
+// int fat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
+// {
+// 	struct super_block *sb = inode->i_sb;
+// 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
+// 	int ret, new_fclus, last;
+
+// 	/*
+// 	 * We must locate the last cluster of the file to add this new
+// 	 * one (new_dclus) to the end of the link list (the FAT).
+// 	 */
+// 	last = new_fclus = 0;
+// 	if (MSDOS_I(inode)->i_start) {
+// 		int fclus, dclus;
+
+// 		ret = fat_get_cluster(inode, FAT_ENT_EOF, &fclus, &dclus);
+// 		if (ret < 0)
+// 			return ret;
+// 		new_fclus = fclus + 1;
+// 		last = dclus;
+// 	}
+
+// 	/* add new one to the last of the cluster chain */
+// 	if (last) {
+// 		struct fat_entry fatent;
+
+// 		fatent_init(&fatent);
+// 		ret = fat_ent_read(inode, &fatent, last);
+// 		if (ret >= 0) {
+// 			int wait = inode_needs_sync(inode);
+// 			ret = fat_ent_write(inode, &fatent, new_dclus, wait);
+// 			fatent_brelse(&fatent);
+// 		}
+// 		if (ret < 0)
+// 			return ret;
+// 		/*
+// 		 * FIXME:Although we can add this cache, fat_cache_add() is
+// 		 * assuming to be called after linear search with fat_cache_id.
+// 		 */
+// //		fat_cache_add(inode, new_fclus, new_dclus);
+// 	} else {
+// 		MSDOS_I(inode)->i_start = new_dclus;
+// 		MSDOS_I(inode)->i_logstart = new_dclus;
+// 		/*
+// 		 * Since generic_write_sync() synchronizes regular files later,
+// 		 * we sync here only directories.
+// 		 */
+// 		if (S_ISDIR(inode->i_mode) && IS_DIRSYNC(inode)) {
+// 			ret = fat_sync_inode(inode);
+// 			if (ret)
+// 				return ret;
+// 		} else
+// 			mark_inode_dirty(inode);
+// 	}
+// 	if (new_fclus != (inode->i_blocks >> (sbi->cluster_bits - 9))) {
+// 		fat_fs_error(sb, "clusters badly computed (%d != %llu)",
+// 			     new_fclus,
+// 			     (llu)(inode->i_blocks >> (sbi->cluster_bits - 9)));
+// 		fat_cache_inval_inode(inode);
+// 	}
+// 	inode->i_blocks += nr_cluster << (sbi->cluster_bits - 9);
+
+// 	return 0;
+// }
+
 fn fat_add_cluster(_inode: &mut Inode) -> Result {
+    // int err, cluster;
+
+    // err = fat_alloc_clusters(inode, &cluster, 1);
+    // if (err)
+    //     return err;
+    // /* FIXME: this cluster should be added after data of this
+    //  * cluster is writed */
+    // err = fat_chain_add(inode, cluster, 1);
+    // if (err)
+    //     fat_free_clusters(inode, cluster);
+    // return err;
     unimplemented!()
 }
 

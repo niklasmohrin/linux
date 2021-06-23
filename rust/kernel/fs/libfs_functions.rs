@@ -331,6 +331,10 @@ pub fn filemap_fdatawrite_range(
     Error::parse_int(unsafe { bindings::filemap_fdatawrite_range(mapping, start, end) }).map(|_| ())
 }
 
+pub fn filemap_fdatawrite(mapping: &mut AddressSpace) -> Result {
+    Error::parse_int(unsafe { bindings::filemap_fdatawrite(mapping) }).map(|_| ())
+}
+
 pub fn filemap_fdatawait_range(
     mapping: *mut bindings::address_space,
     start: bindings::loff_t,

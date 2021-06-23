@@ -9,7 +9,7 @@ use crate::{
     fs::super_block::SuperBlock,
     fs::BuildVtable,
     print::ExpectK,
-    types::{Dev, Mode},
+    types::{AddressSpace, Dev, Mode},
     Result,
 };
 
@@ -85,6 +85,10 @@ impl Inode {
 
     pub fn next_ino() -> u32 {
         unsafe { bindings::get_next_ino() } // FIXME: why do the bindings not return c_int here?
+    }
+
+    pub fn mapping(&mut self) -> &mut AddressSpace {
+        unsafe { self.i_mapping.as_mut().expectk("Inode had NULL mapping") }
     }
 
     pub fn init_owner(
