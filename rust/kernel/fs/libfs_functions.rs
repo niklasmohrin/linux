@@ -2,6 +2,7 @@ use core::ptr;
 
 use crate::{
     bindings,
+    buffer_head::BufferHead,
     c_types::*,
     error::Error,
     file::File,
@@ -23,6 +24,7 @@ extern "C" {
         size: bindings::loff_t,
     ) -> c_int;
     fn rust_helper_sync_mapping_buffers(mapping: *mut bindings::address_space) -> c_int;
+    fn rust_helper_brelse(bh: *mut bindings::buffer_head);
 }
 
 pub fn generic_file_read_iter(iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
@@ -329,6 +331,12 @@ pub fn filemap_fdatawait_range(
 
 pub fn sync_mapping_buffers(mapping: *mut bindings::address_space) -> Result {
     Error::parse_int(unsafe { rust_helper_sync_mapping_buffers(mapping) }).map(|_| ())
+}
+
+pub fn release_buffer(buffer_head: &mut BufferHead) {
+    unsafe {
+        rust_helper_brelse(buffer_head.as_ptr_mut());
+    }
 }
 
 crate::declare_c_vtable!(

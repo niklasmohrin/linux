@@ -212,6 +212,18 @@ loff_t rust_helper_i_size_read(const struct inode *inode)
 }
 EXPORT_SYMBOL_GPL(rust_helper_i_size_read);
 
+struct buffer_head *rust_helper_sb_bread(struct super_block *sb, sector_t block)
+{
+	return sb_bread(sb, block);
+}
+EXPORT_SYMBOL_GPL(rust_helper_sb_bread);
+
+void rust_helper_brelse(struct buffer_head *bh)
+{
+	brelse(bh);
+}
+EXPORT_SYMBOL_GPL(rust_helper_brelse);
+
 #if !defined(CONFIG_ARM)
 // See https://github.com/rust-lang/rust-bindgen/issues/1671
 static_assert(__builtin_types_compatible_p(size_t, uintptr_t),

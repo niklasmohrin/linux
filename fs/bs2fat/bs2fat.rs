@@ -4,6 +4,7 @@ use core::{ops::DerefMut, ptr};
 
 use kernel::{
     bindings,
+    buffer_head::BufferHead,
     c_types::*,
     declare_file_operations,
     file::File,
@@ -44,7 +45,7 @@ const MSDOS_SUPER_MAGIC: u64 = 0x4d44;
 struct BS2Fat;
 
 enum FillSuperErrorKind {
-    Invalid(Error),
+    Invalid,
     Fail(Error),
 }
 
@@ -71,14 +72,19 @@ impl FileSystemBase for BS2Fat {
         data: Option<&mut Self::MountOptions>,
         silent: c_int,
     ) -> Result {
-        let res = || -> core::result::Result<(), FillSuperErrorKind> {
-            use FillSuperErrorKind::*;
+        use FillSuperErrorKind::*;
 
+        let silent = silent == 1; // FIXME: why do we not do this in the lib callback?
+
+        let ops = BS2FatSuperOps::default();
+        sb.set_super_operations(ops)?;
+
+        let res = (|| -> core::result::Result<(), FillSuperErrorKind> {
             sb.s_flags |= bindings::SB_NODIRATIME as u64;
             sb.s_magic = MSDOS_SUPER_MAGIC;
-            let ops = BS2FatSuperOps::default();
-            sb.set_super_operations(ops).map_err(Fail)?;
+
             // sb.s_export_op = &fat_export_ops; // FIXME
+
             sb.s_time_gran = 1;
             // sbi.nfs_build_inode_lock = Mutex::ratelimit_state_init(ops.ratelimit, DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST); // FIXME
             // parse_options(
@@ -90,9 +96,53 @@ impl FileSystemBase for BS2Fat {
             //     ops.options,
             // )
             // .map_err(Fail)?;
+
+            // niklas: C calls the given "setup" here, I inlined that
+            // MSDOS_SB(sb)->dir_ops = &msdos_dir_inode_operations; // TODO This should be done in BS2FatSuperOps::default()
+            // sb.set_dentry_operations::<BS2FatDentryOps>();
+            sb.s_flags |= bindings::SB_NOATIME as u64;
+
+            sb.set_min_blocksize(512);
+            let buffer_head = sb
+                .read_block(0)
+                .ok_or_else(|| {
+                    pr_err!("unable to read boot sector");
+                    Fail(Error::EIO)
+                })?
+                .as_mut();
+            let boot_sector = unsafe {
+                buffer_head
+                    .b_data
+                    .cast::<BootSector>()
+                    .as_mut()
+                    .expectk("buffer data was NULL")
+            };
+            let bpb = fat_read_bpb(sb, boot_sector, silent);
+            // niklas: I (for now) chose not to add the floppy disk thingy here :)
+            libfs_functions::release_buffer(buffer_head);
+            let bpb = bpb.map_err(|e| if e == Error::EINVAL { Invalid } else { Fail(e) })?;
+
+            // <snip>
+
             Ok(())
-        };
-        Ok(())
+        })();
+
+        res.map_err(|x| {
+            let error_val = match x {
+                Invalid => {
+                    if !silent {
+                        // TODO: what is fat_msg? sb is given to it too ...
+                        pr_info!("Can't find a valid FAT filesystem");
+                    }
+                    Error::EINVAL
+                }
+                Fail(e) => e,
+            };
+
+            // TODO do things after out_fail
+
+            error_val
+        })
     }
 }
 
@@ -110,6 +160,72 @@ impl Drop for BS2Fat {
         let _ = libfs_functions::unregister_filesystem::<Self>();
         pr_info!("bs2 fat out of action");
     }
+}
+
+const MSDOS_NAME: usize = 11; // maximum name length
+
+#[repr(C)]
+struct BootSector {
+    _ignored: [u8; 3],
+    _system_id: [u8; 8],
+    sector_size: [u8; 2],
+    sec_per_clus: u8,
+    reserved: u16, // niklas: in C, this is explicitly little endian, but the type aliases for both endianneses (?) are identical
+    fats: u8,
+    dir_entries: [u8; 2],
+    sectors: [u8; 2],
+    media: u8,
+    fat_length: u16,
+    secs_track: u16,
+    heads: u16,
+    hidden: u32,
+    total_sect: u32,
+
+    // fat16
+    drive_number: u8,
+    state: u8,
+    signature: u8,
+    vol_id: [u8; 4],
+    vol_label: [u8; MSDOS_NAME],
+    fs_type: [u8; 8],
+    // normally, this is a union with fat32 stuff, but ...
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct BiosParamBlock {
+    sector_size: u16,
+    sectors_per_cluster: u8,
+    reserved: u16,
+    fats: u8,
+    dir_entries: u16,
+    sectors: u16,
+    fat_length: u16,
+    total_sectors: u32,
+
+    fat16_state: u8,
+    fat16_vol_idd: u32,
+
+    _fat32_length: u32,
+    _fat32_root_cluster: u32,
+    _fat32_info_sector: u16,
+    _fat32_state: u8,
+    _fat32_vol_id: u32,
+}
+
+fn fat_read_bpb(
+    sb: &mut SuperBlock,
+    boot_sector: &BootSector,
+    silent: bool,
+) -> Result<BiosParamBlock> {
+    return Err(Error::EINVAL);
+
+    let bpb = BiosParamBlock {
+        // TODO: impl
+        ..Default::default()
+    };
+
+    Ok(bpb)
 }
 
 #[derive(Default)]
