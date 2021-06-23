@@ -42,6 +42,7 @@ mod allocator;
 pub mod bindings;
 
 pub mod buffer;
+pub mod buffer_head;
 pub mod c_types;
 pub mod chrdev;
 #[macro_use]
