@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#include <asm/unaligned.h>
 #include <linux/buffer_head.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
@@ -223,6 +224,30 @@ void rust_helper_brelse(struct buffer_head *bh)
 	brelse(bh);
 }
 EXPORT_SYMBOL_GPL(rust_helper_brelse);
+
+u16 rust_helper_get_unaligned_le16(const void *p)
+{
+	return get_unaligned_le16(p);
+}
+EXPORT_SYMBOL_GPL(rust_helper_get_unaligned_le16);
+
+u32 rust_helper_get_unaligned_le32(const void *p)
+{
+	return get_unaligned_le32(p);
+}
+EXPORT_SYMBOL_GPL(rust_helper_get_unaligned_le32);
+
+u16 rust_helper_le16_to_cpu(const u16 x)
+{
+	return le16_to_cpu(x);
+}
+EXPORT_SYMBOL_GPL(rust_helper_le16_to_cpu);
+
+u32 rust_helper_le32_to_cpu(const u32 x)
+{
+	return le32_to_cpu(x);
+}
+EXPORT_SYMBOL_GPL(rust_helper_le32_to_cpu);
 
 #if !defined(CONFIG_ARM)
 // See https://github.com/rust-lang/rust-bindgen/issues/1671

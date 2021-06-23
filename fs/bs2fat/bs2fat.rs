@@ -25,6 +25,13 @@ use kernel::{
     Error,
 };
 
+extern "C" {
+    fn rust_helper_le16_to_cpu(x: u16) -> u16;
+    fn rust_helper_le32_to_cpu(x: u32) -> u32;
+    fn rust_helper_get_unaligned_le16(p: *const c_void) -> u16;
+    fn rust_helper_get_unaligned_le32(p: *const c_void) -> u32;
+}
+
 module! {
     type: BS2Fat,
     name: b"bs2fat",
@@ -204,7 +211,7 @@ struct BiosParamBlock {
     total_sectors: u32,
 
     fat16_state: u8,
-    fat16_vol_idd: u32,
+    fat16_vol_id: u32,
 
     _fat32_length: u32,
     _fat32_root_cluster: u32,
@@ -213,17 +220,68 @@ struct BiosParamBlock {
     _fat32_vol_id: u32,
 }
 
-fn fat_read_bpb(
-    sb: &mut SuperBlock,
-    boot_sector: &BootSector,
-    silent: bool,
-) -> Result<BiosParamBlock> {
-    return Err(Error::EINVAL);
+fn fat_read_bpb(sb: &mut SuperBlock, b: &BootSector, silent: bool) -> Result<BiosParamBlock> {
+    let bpb = unsafe {
+        BiosParamBlock {
+            sector_size: rust_helper_get_unaligned_le16(ptr::addr_of!(b.sector_size).cast()),
+            sectors_per_cluster: b.sec_per_clus,
+            reserved: rust_helper_le16_to_cpu(b.reserved),
+            fats: b.fats,
+            dir_entries: rust_helper_get_unaligned_le16(ptr::addr_of!(b.dir_entries).cast()),
+            sectors: rust_helper_get_unaligned_le16(ptr::addr_of!(b.sectors).cast()),
+            fat_length: rust_helper_le16_to_cpu(b.fat_length),
+            total_sectors: rust_helper_le32_to_cpu(b.total_sect),
 
-    let bpb = BiosParamBlock {
-        // TODO: impl
-        ..Default::default()
+            fat16_state: b.state,
+            fat16_vol_id: rust_helper_get_unaligned_le32(ptr::addr_of!(b.vol_id).cast()),
+            ..Default::default()
+        }
     };
+
+    if bpb.reserved == 0 {
+        if !silent {
+            pr_err!("bogus number of reserved sectors");
+        }
+
+        return Err(Error::EINVAL);
+    }
+
+    if bpb.fats == 0 {
+        if !silent {
+            pr_err!("bogus number of FAT structure");
+        }
+
+        return Err(Error::EINVAL);
+    }
+
+    if !(0xf8 <= b.media || b.media == 0xf0) {
+        if !silent {
+            pr_err!("invalid media value ({:#x})", b.media);
+        }
+        return Err(Error::EINVAL);
+    }
+
+    if !bpb.sector_size.is_power_of_two() || bpb.sector_size < 512 || bpb.sector_size > 4096 {
+        if !silent {
+            pr_err!("bogus logical sector size {}", bpb.sector_size);
+        }
+        return Err(Error::EINVAL);
+    }
+
+    if !bpb.sectors_per_cluster.is_power_of_two() {
+        if !silent {
+            pr_err!("bogus sectors per cluster {}", bpb.sectors_per_cluster);
+        }
+        return Err(Error::EINVAL);
+    }
+
+    if bpb.fat_length == 0 {
+        // FIXME: C also checks a fat32 thing here
+        if !silent {
+            pr_err!("bogus number of FAT sectors");
+        }
+        return Err(Error::EINVAL);
+    }
 
     Ok(bpb)
 }
