@@ -5,7 +5,9 @@
 //! C headers: [`include/linux/fs.h`](../../../../include/linux/fs.h) and
 //! [`include/linux/file.h`](../../../../include/linux/file.h)
 
-use crate::{bindings, error::Error, fs::inode::Inode, print::ExpectK, Result};
+use crate::{
+    bindings, error::Error, file_operations::FMode, fs::inode::Inode, print::ExpectK, Result,
+};
 use core::{mem::ManuallyDrop, ops::Deref};
 
 /// Wraps the kernel's `struct file`.
@@ -58,6 +60,10 @@ impl File {
                 .expectk("file mapping hat NULL host")
                 .as_mut()
         }
+    }
+
+    pub fn fmode(&self) -> FMode {
+        FMode::from_int(unsafe { self.ptr.as_mut().expectk("File::ptr was null").f_mode })
     }
 }
 
