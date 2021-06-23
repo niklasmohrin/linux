@@ -51,11 +51,6 @@ const MSDOS_SUPER_MAGIC: u64 = 0x4d44;
 
 struct BS2Fat;
 
-enum FillSuperErrorKind {
-    Invalid,
-    Fail(Error),
-}
-
 impl FileSystemBase for BS2Fat {
     const NAME: &'static CStr = kernel::c_str!("bs2fat");
     const FS_FLAGS: c_int = (bindings::FS_REQUIRES_DEV | bindings::FS_ALLOW_IDMAP) as _;
@@ -79,6 +74,10 @@ impl FileSystemBase for BS2Fat {
         data: Option<&mut Self::MountOptions>,
         silent: c_int,
     ) -> Result {
+        enum FillSuperErrorKind {
+            Invalid,
+            Fail(Error),
+        }
         use FillSuperErrorKind::*;
 
         let silent = silent == 1; // FIXME: why do we not do this in the lib callback?
@@ -408,6 +407,7 @@ impl FileOperations for BS2FatFileOps {
         let sb_info: &BS2FatSuperOps = todo!(); // inode.super_block().super_ops().as_mut();
         let inode = inode.lock();
         if mode.has(FileAllocMode::KEEP_SIZE) {
+            pr_emerg!("since fat_add_cluster is not implemented, this isn't gonna end well");
             let size_on_disk = inode.i_blocks << 9;
             if end_offset <= size_on_disk as _ {
                 return Ok(());
