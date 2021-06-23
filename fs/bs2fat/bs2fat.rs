@@ -13,10 +13,8 @@ use kernel::{
         kiocb::Kiocb,
         libfs_functions,
         super_block::SuperBlock,
-        FileSystemBase, FileSystemType,
-        inode::Inode, kiocb::Kiocb, libfs_functions, super_block::SuperBlock, FileSystemBase,
         super_operations::SuperOperations,
-        FileSystemType,
+        FileSystemBase, FileSystemType,
     },
     iov_iter::IovIter,
     prelude::*,
@@ -41,14 +39,13 @@ const BAD_IF_STRICT: &[u8] = b"+=,; ";
 const SECS_PER_MIN: i64 = 60;
 const SECS_PER_DAY: i64 = 60 * 60 * 24;
 const FAT_ROOT_INO: u64 = 1;
-const MSDOS_SUPER_MAGIC = 0x4d44;
+const MSDOS_SUPER_MAGIC: u64 = 0x4d44;
 
 struct BS2Fat;
 
-enum FillSuperInnerResult {
-    Ok,
-    Invalid,
-    Fail,
+enum FillSuperErrorKind {
+    Invalid(Error),
+    Fail(Error),
 }
 
 impl FileSystemBase for BS2Fat {
@@ -71,19 +68,31 @@ impl FileSystemBase for BS2Fat {
 
     fn fill_super(
         sb: &mut SuperBlock,
-        _data: Option<&mut Self::MountOptions>,
-        _silent: c_int,
+        data: Option<&mut Self::MountOptions>,
+        silent: c_int,
     ) -> Result {
-        let res = || {
-            sb.s_flags |= bindings::SB_NODIRATIME;
+        let res = || -> core::result::Result<(), FillSuperErrorKind> {
+            use FillSuperErrorKind::*;
+
+            sb.s_flags |= bindings::SB_NODIRATIME as u64;
             sb.s_magic = MSDOS_SUPER_MAGIC;
             let ops = BS2FatSuperOps::default();
-            sb.set_super_operations(ops)?;
+            sb.set_super_operations(ops).map_err(Fail)?;
             // sb.s_export_op = &fat_export_ops; // FIXME
             sb.s_time_gran = 1;
             // sbi.nfs_build_inode_lock = Mutex::ratelimit_state_init(ops.ratelimit, DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST); // FIXME
-            parse_options(sb, data, isvfat, silent, &debug, ops.options)?.map(Fail)
+            // parse_options(
+            //     sb,
+            //     data,
+            //     false, /* is_vfat */
+            //     silent,
+            //     &debug,
+            //     ops.options,
+            // )
+            // .map_err(Fail)?;
+            Ok(())
         };
+        Ok(())
     }
 }
 
