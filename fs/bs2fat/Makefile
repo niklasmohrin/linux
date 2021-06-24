@@ -1,1 +1,1 @@
-obj-$(CONFIG_BS2_RAMFS) += bs2fat.o
+obj-$(CONFIG_BS2_FAT) += bs2fat.o
