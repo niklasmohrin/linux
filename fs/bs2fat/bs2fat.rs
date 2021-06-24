@@ -1,6 +1,6 @@
 #![no_std]
 
-use core::{ops::DerefMut, ptr};
+use core::{cmp::Ord, ops::DerefMut, ptr};
 
 use kernel::{
     bindings,
@@ -28,8 +28,10 @@ use kernel::{
 };
 
 extern "C" {
+    // TODO: actually, these are all implemented as e.g. u16::from_le
     fn rust_helper_le16_to_cpu(x: u16) -> u16;
     fn rust_helper_le32_to_cpu(x: u32) -> u32;
+    fn rust_helper_cpu_to_le16(x: u16) -> u16;
     fn rust_helper_get_unaligned_le16(p: *const c_void) -> u16;
     fn rust_helper_get_unaligned_le32(p: *const c_void) -> u32;
 }
@@ -47,7 +49,26 @@ const BAD_CHARS: &[u8] = b"*?<>|\"";
 const BAD_IF_STRICT: &[u8] = b"+=,; ";
 
 const SECS_PER_MIN: i64 = 60;
+const SECS_PER_HOUR: i64 = 60 * 60;
 const SECS_PER_DAY: i64 = 60 * 60 * 24;
+
+// DOS dates from 1980/1/1 through 2107/12/31
+const FAT_DATE_MIN: u16 = (0 << 9 | 1 << 5 | 1);
+const FAT_DATE_MAX: u16 = (127 << 9 | 12 << 5 | 31);
+const FAT_TIME_MAX: u16 = (23 << 11 | 59 << 5 | 29);
+
+/// days between 1.1.70 and 1.1.80 (2 leap days)
+const DAYS_DELTA: i64 = 365 * 10 + 2;
+#[rustfmt::skip]
+const DAYS_IN_YEAR: &[i64] = &[
+    // Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec
+    0,   0,  31,  59,  90, 120, 151, 181, 212, 243, 273, 304, 334, 0, 0, 0,
+];
+const YEAR_2100: i64 = 120;
+const fn is_leap_year(year: i64) -> bool {
+    (year & 0b11) == 0 && year != YEAR_2100
+}
+
 const FAT_ROOT_INO: u64 = 1;
 const MSDOS_SUPER_MAGIC: u64 = 0x4d44;
 
@@ -97,6 +118,12 @@ impl FileSystemBase for BS2Fat {
 
         let silent = silent == 1; // FIXME: why do we not do this in the lib callback?
 
+        // niklas: We really want to still write to that, but also we want to allocate and error
+        // early here
+        // I think we should create the boxed value here, but set it later. This would require a
+        // change in the SuperBlock signature, but I think it's good anyways
+        // MAYBE, we could even consider a FatSuperOpsBuilder that lets you set the fields over
+        // time and emits the final struct when its done
         let ops = BS2FatSuperOps::default();
         sb.set_super_operations(ops)?;
 
@@ -142,6 +169,51 @@ impl FileSystemBase for BS2Fat {
             // niklas: I (for now) chose not to add the floppy disk thingy here :)
             libfs_functions::release_buffer(buffer_head);
             let bpb = bpb.map_err(|e| if e == Error::EINVAL { Invalid } else { Fail(e) })?;
+
+            let logical_sector_size = bpb.sector_size as u64;
+            // FIXME see comment above
+            // ops.sectors_per_cluster = bpb.sectors_per_cluster as _;
+
+            if logical_sector_size < sb.s_blocksize {
+                pr_err!(
+                    "logical sector size too small for device ({})",
+                    logical_sector_size
+                );
+                return Err(Fail(Error::EIO));
+            }
+
+            if logical_sector_size > sb.s_blocksize {
+                if sb.set_blocksize(logical_sector_size as _) != 0 {
+                    pr_err!("unable to set blocksize {}", logical_sector_size);
+                    return Err(Fail(Error::EIO));
+                }
+
+                if let Some(bh_resize) = sb.read_block(0) {
+                    libfs_functions::release_buffer(bh_resize.as_mut());
+                } else {
+                    pr_err!(
+                        "unable to read boot sector (logical sector size {})",
+                        sb.s_blocksize
+                    );
+                    return Err(Fail(Error::EIO));
+                }
+            }
+
+            // TODO set a lot of fields on sbi / ops; see comment above
+
+            sb.s_maxbytes = 0xffffffff;
+            // FIXME: ops borrow see comment above
+            // unsafe {
+            //     sb.s_time_min =
+            //         fat_time_to_unix_time(&ops, 0, rust_helper_cpu_to_le16(FAT_DATE_MIN), 0).tv_sec;
+            //     sb.s_time_max = fat_time_to_unix_time(
+            //         &ops,
+            //         rust_helper_cpu_to_le16(FAT_TIME_MAX),
+            //         rust_helper_cpu_to_le16(FAT_DATE_MAX),
+            //         0,
+            //     )
+            //     .tv_sec;
+            // }
 
             // <snip>
 
@@ -300,11 +372,51 @@ fn fat_read_bpb(sb: &mut SuperBlock, b: &BootSector, silent: bool) -> Result<Bio
     Ok(bpb)
 }
 
+fn fat_time_to_unix_time(
+    sbi: &BS2FatSuperOps,
+    time: u16,
+    date: u16,
+    time_cs: u8,
+) -> bindings::timespec64 {
+    let (time, date) = unsafe { (rust_helper_le16_to_cpu(time), rust_helper_le16_to_cpu(date)) };
+    let year = (date >> 9) as i64;
+    let month = ((date >> 5) & 0xf).max(1) as usize;
+    let day = ((date & 0x1f).max(1) - 1) as i64;
+    let mut leap_day = (year + 3) / 4;
+    if year > YEAR_2100 {
+        leap_day -= 1;
+    }
+    if is_leap_year(year) && month > 2 {
+        leap_day += 1;
+    }
+
+    let time = time as i64;
+    let mut second = (time & 0x1f) << 1;
+    second += ((time >> 5) & 0x3f) * SECS_PER_MIN;
+    second += (time >> 11) * SECS_PER_HOUR;
+    second += (year * 365 + leap_day + DAYS_IN_YEAR[month] + day + DAYS_DELTA) * SECS_PER_DAY;
+    second += sbi.timezone_offset();
+
+    if time_cs != 0 {
+        let time_cs = time_cs as i64;
+        bindings::timespec64 {
+            tv_sec: second + (time_cs / 100),
+            tv_nsec: (time_cs % 100) * 10_000_000,
+        }
+    } else {
+        bindings::timespec64 {
+            tv_sec: second,
+            tv_nsec: 0,
+        }
+    }
+}
+
 #[derive(Default)]
 struct BS2FatSuperOps {
     cluster_bits: u16,
     cluster_size: usize,
     options: BS2FatMountOptions,
+    sectors_per_cluster: u16,
     // nfs_build_inode_lock: Mutex,
 }
 
@@ -355,6 +467,9 @@ impl FileOperations for BS2FatFileOps {
                 .map(|x| x.options.flush)
                 .unwrap_or(false)
         {
+            // niklas: about that lifetime error, make sure to check out what I did with
+            // SuperBlock::read_block to tell the compiler that the lifetimes are actually
+            // unrelated
             fat_flush_inodes(inode.super_block_mut(), Some(inode), None);
             rust_helper_congestion_wait(BLK_RW::ASYNC as _, RUST_HELPER_HZ / 10);
         }
@@ -482,7 +597,8 @@ fn fat_flush_inodes(sb: &mut SuperBlock, i1: Option<&mut Inode>, i2: Option<&mut
     // TODO: return better fitting error?
     i1.map(writeback_inode).ok_or(Error::EINVAL)?;
     i2.map(writeback_inode).ok_or(Error::EINVAL)?;
-    libfs_functions::filemap_flush(sb.s_bdev.bd_inode.i_mapping) // TODO: write block_device struct, not in bindings
+    unimplemented!()
+    // libfs_functions::filemap_flush(sb.s_bdev.bd_inode.i_mapping) // TODO: write block_device struct, not in bindings
 }
 
 fn writeback_inode(inode: &mut Inode) -> Result {

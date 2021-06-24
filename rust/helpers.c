@@ -244,6 +244,12 @@ u16 rust_helper_le16_to_cpu(const u16 x)
 }
 EXPORT_SYMBOL_GPL(rust_helper_le16_to_cpu);
 
+u16 rust_helper_cpu_to_le16(const u16 x)
+{
+	return cpu_to_le16(x);
+}
+EXPORT_SYMBOL_GPL(rust_helper_cpu_to_le16);
+
 u32 rust_helper_le32_to_cpu(const u32 x)
 {
 	return le32_to_cpu(x);

@@ -37,6 +37,13 @@ impl SuperBlock {
         unsafe { bindings::sb_min_blocksize(self.as_ptr_mut(), size) }
     }
 
+    pub fn set_blocksize(&mut self, size: i32) -> c_int {
+        unsafe { bindings::sb_set_blocksize(self.as_ptr_mut(), size) }
+    }
+
+    /// The returned buffer should be discarded using `libfs_functions::release_buffer` (otherwise
+    /// known as `brelse`).
+    #[must_use]
     pub fn read_block<'this, 'ret>(
         &'this mut self,
         block: u64,
