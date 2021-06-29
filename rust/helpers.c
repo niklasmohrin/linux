@@ -8,6 +8,7 @@
 #include <linux/errname.h>
 #include <linux/gfp.h>
 #include <linux/highmem.h>
+#include <linux/iversion.h>
 #include <linux/mutex.h>
 #include <linux/pagemap.h>
 #include <linux/sched/signal.h>
@@ -213,6 +214,18 @@ loff_t rust_helper_i_size_read(const struct inode *inode)
 	return i_size_read(inode);
 }
 EXPORT_SYMBOL_GPL(rust_helper_i_size_read);
+
+void rust_helper_insert_inode_hash(struct inode *inode)
+{
+	insert_inode_hash(inode);
+}
+EXPORT_SYMBOL_GPL(rust_helper_insert_inode_hash);
+
+void rust_helper_inode_set_iversion(struct inode *inode, u64 value)
+{
+	inode_set_iversion(inode, value);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inode_set_iversion);
 
 struct buffer_head *rust_helper_sb_bread(struct super_block *sb, sector_t block)
 {

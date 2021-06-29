@@ -18,6 +18,8 @@ extern "C" {
     fn rust_helper_inode_unlock(inode: *mut bindings::inode);
     fn rust_helper_mark_inode_dirty(inode: *mut bindings::inode);
     fn rust_helper_i_size_read(inode: *const bindings::inode) -> bindings::loff_t;
+    fn rust_helper_insert_inode_hash(inode: *mut bindings::inode);
+    fn rust_helper_inode_set_iversion(inode: *mut bindings::inode, value: u64);
 }
 
 #[derive(PartialEq, Eq)]
@@ -193,6 +195,18 @@ impl Inode {
 
     pub fn lock(&mut self) -> LockGuard<'_> {
         LockGuard::new(self)
+    }
+
+    pub fn insert_hash(&mut self) {
+        unsafe {
+            rust_helper_insert_inode_hash(self.as_ptr_mut());
+        }
+    }
+
+    pub fn set_iversion(&mut self, value: u64) {
+        unsafe {
+            rust_helper_inode_set_iversion(self.as_ptr_mut(), value);
+        }
     }
 }
 

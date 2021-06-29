@@ -1,6 +1,8 @@
 #![no_std]
+#![feature(allocator_api)]
 
-use core::{cmp::Ord, ops::DerefMut, ptr};
+use alloc::boxed::Box;
+use core::{cmp::Ord, mem, ops::DerefMut, ptr};
 
 use kernel::{
     bindings,
@@ -12,6 +14,7 @@ use kernel::{
         FMode, FileAllocMode, FileOperations, FileTimeFlags, IoctlCommand, SeekFrom,
     },
     fs::{
+        dentry::Dentry,
         inode::{Inode, WriteSync},
         kiocb::Kiocb,
         libfs_functions,
@@ -53,9 +56,9 @@ const SECS_PER_HOUR: i64 = 60 * 60;
 const SECS_PER_DAY: i64 = 60 * 60 * 24;
 
 // DOS dates from 1980/1/1 through 2107/12/31
-const FAT_DATE_MIN: u16 = (0 << 9 | 1 << 5 | 1);
-const FAT_DATE_MAX: u16 = (127 << 9 | 12 << 5 | 31);
-const FAT_TIME_MAX: u16 = (23 << 11 | 59 << 5 | 29);
+const FAT_DATE_MIN: u16 = 0 << 9 | 1 << 5 | 1;
+const FAT_DATE_MAX: u16 = 127 << 9 | 12 << 5 | 31;
+const FAT_TIME_MAX: u16 = 23 << 11 | 59 << 5 | 29;
 
 /// days between 1.1.70 and 1.1.80 (2 leap days)
 const DAYS_DELTA: i64 = 365 * 10 + 2;
@@ -70,7 +73,16 @@ const fn is_leap_year(year: i64) -> bool {
 }
 
 const FAT_ROOT_INO: u64 = 1;
+const FAT_FSINFO_INO: u64 = 2;
+/// start of data cluster's entry (number of reserved clusters)
+const FAT_START_ENT: u32 = 2;
 const MSDOS_SUPER_MAGIC: u64 = 0x4d44;
+const MSDOS_NAME: usize = 11; // maximum name length
+
+const FAT_STATE_DIRTY: u8 = 1;
+
+const FAT12_MAX_CLUSTERS: usize = 0xff4;
+const FAT16_MAX_CLUSTERS: usize = 0xfff4;
 
 extern "C" {
     static RUST_HELPER_HZ: c_long;
@@ -106,7 +118,7 @@ impl FileSystemBase for BS2Fat {
     }
 
     fn fill_super(
-        sb: &mut SuperBlock,
+        mut sb: &mut SuperBlock,
         data: Option<&mut Self::MountOptions>,
         silent: c_int,
     ) -> Result {
@@ -124,8 +136,8 @@ impl FileSystemBase for BS2Fat {
         // change in the SuperBlock signature, but I think it's good anyways
         // MAYBE, we could even consider a FatSuperOpsBuilder that lets you set the fields over
         // time and emits the final struct when its done
-        let ops = BS2FatSuperOps::default();
-        sb.set_super_operations(ops)?;
+        let mut ops = Box::try_new(BS2FatSuperOps::default())?;
+        // sb.set_super_operations(ops)?;
 
         let res = (|| -> core::result::Result<(), FillSuperErrorKind> {
             sb.s_flags |= bindings::SB_NODIRATIME as u64;
@@ -146,6 +158,8 @@ impl FileSystemBase for BS2Fat {
             // .map_err(Fail)?;
 
             // niklas: C calls the given "setup" here, I inlined that
+            // niklas, later: let's first see how this is used, maybe we can make it rust-y and
+            // have a field of ops be a &(dyn InodeOperations) or so
             // MSDOS_SB(sb)->dir_ops = &msdos_dir_inode_operations; // TODO This should be done in BS2FatSuperOps::default()
             // sb.set_dentry_operations::<BS2FatDentryOps>();
             sb.s_flags |= bindings::SB_NOATIME as u64;
@@ -172,7 +186,7 @@ impl FileSystemBase for BS2Fat {
 
             let logical_sector_size = bpb.sector_size as u64;
             // FIXME see comment above
-            // ops.sectors_per_cluster = bpb.sectors_per_cluster as _;
+            ops.sectors_per_cluster = bpb.sectors_per_cluster as _;
 
             if logical_sector_size < sb.s_blocksize {
                 pr_err!(
@@ -199,23 +213,115 @@ impl FileSystemBase for BS2Fat {
                 }
             }
 
-            // TODO set a lot of fields on sbi / ops; see comment above
-
+            // mutex_init => TODO should be done in constructor / default
+            ops.cluster_size = sb.s_blocksize as u32 * ops.sectors_per_cluster as u32;
+            ops.cluster_bits = ops.cluster_size.trailing_zeros() as _; // TODO someone sanity-check please
+            ops.fats = bpb.fats;
+            ops.fat_bits = 0; // don't know yet
+            ops.fat_start = bpb.reserved;
+            ops.fat_length = bpb.fat_length;
+            ops.root_cluster = 0;
+            ops.free_clusters = u32::MAX; // don't know yet
+            ops.free_clusters_valid = 0;
+            ops.previous_free = FAT_START_ENT;
             sb.s_maxbytes = 0xffffffff;
-            // FIXME: ops borrow see comment above
-            // unsafe {
-            //     sb.s_time_min =
-            //         fat_time_to_unix_time(&ops, 0, rust_helper_cpu_to_le16(FAT_DATE_MIN), 0).tv_sec;
-            //     sb.s_time_max = fat_time_to_unix_time(
-            //         &ops,
-            //         rust_helper_cpu_to_le16(FAT_TIME_MAX),
-            //         rust_helper_cpu_to_le16(FAT_DATE_MAX),
-            //         0,
-            //     )
-            //     .tv_sec;
-            // }
+            unsafe {
+                sb.s_time_min =
+                    fat_time_to_unix_time(&ops, 0, rust_helper_cpu_to_le16(FAT_DATE_MIN), 0).tv_sec;
+                sb.s_time_max = fat_time_to_unix_time(
+                    &ops,
+                    rust_helper_cpu_to_le16(FAT_TIME_MAX),
+                    rust_helper_cpu_to_le16(FAT_DATE_MAX),
+                    0,
+                )
+                .tv_sec;
+            }
 
-            // <snip>
+            // skipping over the
+            //     if (!sbi->fat_length && bpb.fat32_length) { ... }
+
+            ops.volume_id = bpb.fat16_vol_id;
+            ops.dir_per_block = (sb.s_blocksize / mem::size_of::<Bs2FatDirEntry>() as u64) as _;
+            ops.dir_per_block_bits = ops.dir_per_block.trailing_zeros() as _; // TODO someone sanity check please
+            ops.dir_start = ops.fat_start as usize + ops.fats as usize * ops.fat_length as usize;
+            ops.dir_entries = bpb.dir_entries;
+
+            if ops.dir_entries as i32 & (ops.dir_per_block - 1) != 0 {
+                if !silent {
+                    pr_err!("bogus number of directory entries ({})", ops.dir_entries);
+                }
+                return Err(Invalid);
+            }
+
+            let rootdir_sectors = ops.dir_entries as usize * mem::size_of::<Bs2FatDirEntry>()
+                / sb.s_blocksize as usize;
+            ops.data_start = ops.dir_start + rootdir_sectors;
+            let total_sectors = Some(bpb.sectors)
+                .filter(|&x| x != 0)
+                .unwrap_or(bpb.total_sectors as _);
+            let total_clusters =
+                (total_sectors as usize - ops.data_start) / ops.sectors_per_cluster as usize;
+
+            ops.fat_bits = match total_clusters {
+                x if x <= FAT12_MAX_CLUSTERS => 12,
+                _ => 16,
+            };
+
+            ops.dirty = (bpb.fat16_state & FAT_STATE_DIRTY) as _; // FIXME wrapper
+
+            // check that the table doesn't overflow
+            let fat_clusters = calc_fat_clusters(&sb);
+            let total_clusters = total_clusters.min(fat_clusters - FAT_START_ENT as usize);
+            if total_clusters > ops.max_fats() {
+                if !silent {
+                    pr_err!("count of clusters too big ({})", total_clusters);
+                }
+                return Err(Invalid);
+            }
+            ops.max_cluster = total_clusters + FAT_START_ENT as usize;
+
+            if ops.free_clusters > total_clusters as u32 {
+                ops.free_clusters = u32::MAX;
+            }
+            ops.previous_free = (ops.previous_free % ops.max_cluster as u32).max(FAT_START_ENT);
+
+            // set up enough so that it can read an inode
+            // FIXME currently, we haven't set the super ops yet, becaues we are still editing the
+            // struct
+            fat_hash_init(&mut sb);
+            dir_hash_init(&mut sb);
+            fat_ent_access_init(&mut sb);
+
+            // TODO something about nls and codepages, let's first check whether that is important
+
+            ops.fat_inode = Some(Inode::new(&mut sb).ok_or(Fail(Error::ENOMEM))?);
+            ops.fsinfo_inode = {
+                let inode = Inode::new(&mut sb).ok_or(Fail(Error::ENOMEM))?;
+                inode.i_ino = FAT_FSINFO_INO;
+                inode.insert_hash();
+                Some(inode)
+            };
+            sb.s_root = {
+                let mut inode = Inode::new(&mut sb).ok_or(Fail(Error::ENOMEM))?;
+                inode.i_ino = FAT_ROOT_INO;
+                inode.set_iversion(1);
+                if let Err(e) = fat_read_root(&mut inode) {
+                    inode.put();
+                    return Err(Fail(e));
+                }
+                inode.insert_hash();
+                fat_attach(&mut inode, 0);
+                Dentry::make_root(&mut inode)
+                    .ok_or_else(|| {
+                        pr_err!("get root inode failed");
+                        Fail(Error::ENOMEM)
+                    })?
+                    .as_ptr_mut()
+            };
+
+            // TODO something about the "discard" option
+
+            fat_set_state(&mut sb, 1, 0);
 
             Ok(())
         })();
@@ -232,7 +338,19 @@ impl FileSystemBase for BS2Fat {
                 Fail(e) => e,
             };
 
-            // TODO do things after out_fail
+            // TODO some nls things
+
+            if let Some(mut ops) = sb.take_super_operations::<BS2FatSuperOps>() {
+                unsafe {
+                    if let Some(inode_ptr) = ops.fsinfo_inode.take() {
+                        (*inode_ptr).put();
+                    }
+                    if let Some(inode_ptr) = ops.fat_inode.take() {
+                        (*inode_ptr).put();
+                    }
+                }
+                drop(ops);
+            }
 
             error_val
         })
@@ -255,7 +373,15 @@ impl Drop for BS2Fat {
     }
 }
 
-const MSDOS_NAME: usize = 11; // maximum name length
+fn fat_hash_init(sb: &mut SuperBlock) {
+    unimplemented!()
+}
+fn dir_hash_init(sb: &mut SuperBlock) {
+    unimplemented!()
+}
+fn fat_ent_access_init(sb: &mut SuperBlock) {
+    unimplemented!()
+}
 
 #[repr(C)]
 struct BootSector {
@@ -304,6 +430,10 @@ struct BiosParamBlock {
     _fat32_info_sector: u16,
     _fat32_state: u8,
     _fat32_vol_id: u32,
+}
+
+fn calc_fat_clusters(sb: &SuperBlock) -> usize {
+    unimplemented!()
 }
 
 fn fat_read_bpb(sb: &mut SuperBlock, b: &BootSector, silent: bool) -> Result<BiosParamBlock> {
@@ -411,13 +541,80 @@ fn fat_time_to_unix_time(
     }
 }
 
+fn fat_read_root(root_inode: &mut Inode) -> Result {
+    unimplemented!()
+}
+fn fat_attach(root_inode: &mut Inode, some_number: usize) {
+    unimplemented!()
+}
+fn fat_set_state(sb: &mut SuperBlock, anumber: usize, anothernumber: usize) {
+    unimplemented!()
+}
+
+struct Bs2FatDirEntry; // is this supposed to be a dentry, or an entry of a directory some other way?
+
 #[derive(Default)]
 struct BS2FatSuperOps {
-    cluster_bits: u16,
-    cluster_size: usize,
-    options: BS2FatMountOptions,
     sectors_per_cluster: u16,
-    // nfs_build_inode_lock: Mutex,
+    cluster_bits: u16,
+    cluster_size: u32,
+
+    /// number of tables
+    fats: u8,
+    /// 12, 16 (, 32)
+    fat_bits: u8,
+    fat_start: u16,
+    fat_length: u16,
+
+    dir_start: usize,
+    dir_entries: u16,
+
+    data_start: usize,
+
+    /// maximum cluster number
+    max_cluster: usize,
+    root_cluster: isize,
+    previous_free: u32,
+    free_clusters: u32, // C sets this to -1 sometimes, we probably want to use u32::MAX for that
+    free_clusters_valid: u32,
+
+    // niklas: Mutex around () is closest to the C way
+    // if users of the guarded values _always_ lock the mutex, we can move the protected value into
+    // the Mutex as one would do in Rust
+    // fat_lock: Mutex<()>,
+    // nfs_build_inode_lock: Mutex<()>,
+    // s_lock: Mutex<()>,
+    options: BS2FatMountOptions,
+
+    /// directory entries per block
+    dir_per_block: i32,
+    dir_per_block_bits: i32,
+
+    volume_id: u32,
+
+    fat_inode: Option<*mut Inode>,
+    fsinfo_inode: Option<*mut Inode>,
+
+    /// fs state before mount
+    dirty: u32,
+}
+
+// FIXME there isn't much to say, is there?
+unsafe impl Send for BS2FatSuperOps {}
+unsafe impl Sync for BS2FatSuperOps {}
+
+impl BS2FatSuperOps {
+    pub fn is_fat16(&self) -> bool {
+        self.fat_bits == 16
+    }
+
+    pub fn max_fats(&self) -> usize {
+        if self.is_fat16() {
+            FAT16_MAX_CLUSTERS
+        } else {
+            FAT12_MAX_CLUSTERS
+        }
+    }
 }
 
 impl SuperOperations for BS2FatSuperOps {

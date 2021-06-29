@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use core::{
     mem,
     ops::{Deref, DerefMut},
+    ptr,
 };
 
 use crate::{
@@ -30,6 +31,16 @@ impl SuperBlock {
         self.s_op = unsafe { SuperOperationsVtable::<OPS>::build() };
         self.s_fs_info = Box::into_raw(Box::try_new(ops)?).cast();
         Ok(())
+    }
+
+    pub fn take_super_operations<Ops: SuperOperations>(&mut self) -> Option<Box<Ops>> {
+        self.s_op = ptr::null_mut();
+        let p = mem::replace(&mut self.s_fs_info, ptr::null_mut()).cast::<Ops>();
+        if p.is_null() {
+            None
+        } else {
+            Some(unsafe { Box::from_raw(p) })
+        }
     }
 
     /// Returns the blocksize that is chosen
