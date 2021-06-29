@@ -76,7 +76,7 @@ impl Inode {
         }
     }
 
-    pub fn super_block_mut(&mut self) -> &mut SuperBlock {
+    pub fn super_block_mut<'this, 'ret>(&'this mut self) -> &'ret mut SuperBlock {
         unsafe {
             self.i_sb
                 .as_mut()

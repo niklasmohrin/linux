@@ -659,16 +659,9 @@ impl FileOperations for BS2FatFileOps {
     fn release(_obj: Self::Wrapper, file: &File) {
         // Assumption: Inode stems from file (! please verify); TODO:
         let inode: &mut Inode = file.inode();
-        if file.fmode().has(FMode::FMODE_WRITE)
-            && msdos_sb(inode.super_block_mut())
-                .map(|x| x.options.flush)
-                .unwrap_or(false)
-        {
-            // niklas: about that lifetime error, make sure to check out what I did with
-            // SuperBlock::read_block to tell the compiler that the lifetimes are actually
-            // unrelated
+        if file.fmode().has(FMode::FMODE_WRITE) && msdos_sb(inode.super_block_mut()).options.flush {
             fat_flush_inodes(inode.super_block_mut(), Some(inode), None);
-            rust_helper_congestion_wait(BLK_RW::ASYNC as _, RUST_HELPER_HZ / 10);
+            unsafe { rust_helper_congestion_wait(BLK_RW::ASYNC as _, RUST_HELPER_HZ / 10) };
         }
     }
 
@@ -781,19 +774,23 @@ impl FileOperations for BS2FatFileOps {
     }
 }
 
-fn msdos_sb(sb: &mut SuperBlock) -> Option<&mut BS2FatSuperOps> {
+fn msdos_sb(sb: &mut SuperBlock) -> &mut BS2FatSuperOps {
     // TODO: use own type for this void* field?
     //&*((*sb).s_fs_info as *const T)
-    (sb.s_fs_info as *mut BS2FatSuperOps).as_mut()
+    unsafe {
+        (sb.s_fs_info as *mut BS2FatSuperOps)
+            .as_mut()
+            .expectk("msdos_sb in s_fs_info is null!")
+    }
 }
 
 fn fat_flush_inodes(sb: &mut SuperBlock, i1: Option<&mut Inode>, i2: Option<&mut Inode>) -> Result {
-    if !msdos_sb(sb).map(|x| x.options.flush).unwrap_or(false) {
-        ()
+    if !msdos_sb(sb).options.flush {
+        return Ok(());
     }
     // TODO: return better fitting error?
-    i1.map(writeback_inode).ok_or(Error::EINVAL)?;
-    i2.map(writeback_inode).ok_or(Error::EINVAL)?;
+    writeback_inode(i1.ok_or(Error::EINVAL)?)?;
+    writeback_inode(i2.ok_or(Error::EINVAL)?)?;
     unimplemented!()
     // libfs_functions::filemap_flush(sb.s_bdev.bd_inode.i_mapping) // TODO: write block_device struct, not in bindings
 }
