@@ -2,11 +2,6 @@ use core::ptr;
 
 use kernel::{fs::super_block::SuperBlock, prelude::*, Error, Result};
 
-use crate::{
-    rust_helper_get_unaligned_le16, rust_helper_get_unaligned_le32, rust_helper_le16_to_cpu,
-    rust_helper_le32_to_cpu,
-};
-
 pub const MSDOS_NAME: usize = 11; // maximum name length
 
 #[repr(C)]
@@ -61,17 +56,17 @@ pub struct BiosParamBlock {
 pub fn fat_read_bpb(sb: &mut SuperBlock, b: &BootSector, silent: bool) -> Result<BiosParamBlock> {
     let bpb = unsafe {
         BiosParamBlock {
-            sector_size: rust_helper_get_unaligned_le16(ptr::addr_of!(b.sector_size).cast()),
+            sector_size: u16::from_le_bytes(ptr::addr_of!(b.sector_size).read_unaligned()),
             sectors_per_cluster: b.sec_per_clus,
-            reserved: rust_helper_le16_to_cpu(b.reserved),
+            reserved: u16::from_le(b.reserved),
             fats: b.fats,
-            dir_entries: rust_helper_get_unaligned_le16(ptr::addr_of!(b.dir_entries).cast()),
-            sectors: rust_helper_get_unaligned_le16(ptr::addr_of!(b.sectors).cast()),
-            fat_length: rust_helper_le16_to_cpu(b.fat_length),
-            total_sectors: rust_helper_le32_to_cpu(b.total_sect),
+            dir_entries: u16::from_le_bytes(ptr::addr_of!(b.dir_entries).read_unaligned()),
+            sectors: u16::from_le_bytes(ptr::addr_of!(b.sectors).read_unaligned()),
+            fat_length: u16::from_le(b.fat_length),
+            total_sectors: u32::from_le(b.total_sect),
 
             fat16_state: b.state,
-            fat16_vol_id: rust_helper_get_unaligned_le32(ptr::addr_of!(b.vol_id).cast()),
+            fat16_vol_id: u32::from_le_bytes(ptr::addr_of!(b.vol_id).read_unaligned()),
             ..Default::default()
         }
     };

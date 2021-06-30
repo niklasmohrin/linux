@@ -29,15 +29,6 @@ use time::{fat_time_to_unix_time, FAT_DATE_MAX, FAT_DATE_MIN, FAT_TIME_MAX};
 
 use crate::inode::{FAT_FSINFO_INO, FAT_ROOT_INO};
 
-extern "C" {
-    // TODO: actually, these are all implemented as e.g. u16::from_le
-    pub fn rust_helper_le16_to_cpu(x: u16) -> u16;
-    pub fn rust_helper_le32_to_cpu(x: u32) -> u32;
-    pub fn rust_helper_cpu_to_le16(x: u16) -> u16;
-    pub fn rust_helper_get_unaligned_le16(p: *const c_void) -> u16;
-    pub fn rust_helper_get_unaligned_le32(p: *const c_void) -> u32;
-}
-
 module! {
     type: BS2Fat,
     name: b"bs2fat",
@@ -189,17 +180,8 @@ impl FileSystemBase for BS2Fat {
             ops.free_clusters_valid = 0;
             ops.previous_free = FAT_START_ENT;
             sb.s_maxbytes = 0xffffffff;
-            unsafe {
-                sb.s_time_min =
-                    fat_time_to_unix_time(&ops, 0, rust_helper_cpu_to_le16(FAT_DATE_MIN), 0).tv_sec;
-                sb.s_time_max = fat_time_to_unix_time(
-                    &ops,
-                    rust_helper_cpu_to_le16(FAT_TIME_MAX),
-                    rust_helper_cpu_to_le16(FAT_DATE_MAX),
-                    0,
-                )
-                .tv_sec;
-            }
+            sb.s_time_min = fat_time_to_unix_time(&ops, 0, FAT_DATE_MIN, 0).tv_sec;
+            sb.s_time_max = fat_time_to_unix_time(&ops, FAT_TIME_MAX, FAT_DATE_MAX, 0).tv_sec;
 
             // skipping over the
             //     if (!sbi->fat_length && bpb.fat32_length) { ... }

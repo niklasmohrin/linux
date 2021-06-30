@@ -1,6 +1,6 @@
 use kernel::{bindings, file_operations::FileTimeFlags, fs::inode::Inode};
 
-use crate::{inode::FAT_ROOT_INO, rust_helper_le16_to_cpu, super_ops::BS2FatSuperOps};
+use crate::{inode::FAT_ROOT_INO, super_ops::BS2FatSuperOps};
 
 // DOS dates from 1980/1/1 through 2107/12/31
 pub const FAT_DATE_MIN: u16 = 0 << 9 | 1 << 5 | 1;
@@ -23,13 +23,15 @@ const fn is_leap_year(year: i64) -> bool {
     (year & 0b11) == 0 && year != YEAR_2100
 }
 
+/// IMPORTANT: in contrast to the C signature, this function expects the given parameters to be in
+/// the CPUs native representation and _does not_ convert them from little endian. As a caller, you
+/// have to do this yourself
 pub fn fat_time_to_unix_time(
     sbi: &BS2FatSuperOps,
     time: u16,
     date: u16,
     time_cs: u8,
 ) -> bindings::timespec64 {
-    let (time, date) = unsafe { (rust_helper_le16_to_cpu(time), rust_helper_le16_to_cpu(date)) };
     let year = (date >> 9) as i64;
     let month = ((date >> 5) & 0xf).max(1) as usize;
     let day = ((date & 0x1f).max(1) - 1) as i64;
