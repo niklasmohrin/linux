@@ -2,7 +2,7 @@
 #![feature(allocator_api)]
 
 use alloc::boxed::Box;
-use core::{cmp::Ord, mem, ptr};
+use core::{cmp::Ord, mem, pin::Pin, ptr};
 
 use kernel::{
     bindings,
@@ -14,6 +14,7 @@ use kernel::{
     prelude::*,
     print::ExpectK,
     str::CStr,
+    sync::Mutex,
     Error,
 };
 
@@ -91,7 +92,13 @@ impl FileSystemBase for BS2Fat {
         // change in the SuperBlock signature, but I think it's good anyways
         // MAYBE, we could even consider a FatSuperOpsBuilder that lets you set the fields over
         // time and emits the final struct when its done
-        let mut ops = Box::try_new(BS2FatSuperOps::default())?;
+        let mut ops = unsafe {
+            let mut ops = Box::<BS2FatSuperOps>::try_new_zeroed()?;
+            let mut ops_p = ops.as_mut_ptr();
+            ptr::addr_of_mut!((*ops_p).fat_lock).write(Mutex::new(()));
+            ptr::addr_of_mut!((*ops_p).s_lock).write(Mutex::new(()));
+            Pin::new(ops.assume_init())
+        };
         // sb.set_super_operations(ops)?;
 
         let res = (|| -> core::result::Result<(), FillSuperErrorKind> {
@@ -126,7 +133,6 @@ impl FileSystemBase for BS2Fat {
             })?;
             let boot_sector = unsafe { buffer_head.b_data.cast::<BootSector>().read_unaligned() };
             let bpb = fat_read_bpb(sb, boot_sector, silent);
-            // niklas: I (for now) chose not to add the floppy disk thingy here :)
             libfs_functions::release_buffer(buffer_head);
             let bpb = bpb.map_err(|e| if e == Error::EINVAL { Invalid } else { Fail(e) })?;
 
