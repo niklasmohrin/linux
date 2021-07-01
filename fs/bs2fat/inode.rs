@@ -2,10 +2,12 @@ use kernel::{
     bindings,
     file_operations::FileTimeFlags,
     fs::{
+        block_device::BlockDevice,
         inode::{Inode, WriteSync},
         libfs_functions,
         super_block::SuperBlock,
     },
+    print::ExpectK,
     Error, Result,
 };
 
@@ -64,11 +66,16 @@ pub fn fat_flush_inodes(
     if !msdos_sb(sb).options.flush {
         return Ok(());
     }
-    // TODO: return better fitting error?
     writeback_inode(i1.ok_or(Error::EINVAL)?)?;
     writeback_inode(i2.ok_or(Error::EINVAL)?)?;
-    unimplemented!()
-    // libfs_functions::filemap_flush(sb.s_bdev.bd_inode.i_mapping) // TODO: write block_device struct, not in bindings
+    libfs_functions::filemap_flush(unsafe {
+        (*(sb.s_bdev as *mut BlockDevice))
+            .bd_inode
+            .as_mut()
+            .expectk("bd_inode in block_device is null")
+            .as_mut()
+            .mapping()
+    })
 }
 
 pub fn writeback_inode(inode: &mut Inode) -> Result {
