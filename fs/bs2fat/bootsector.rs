@@ -53,7 +53,7 @@ pub struct BiosParamBlock {
     pub _fat32_vol_id: u32,
 }
 
-pub fn fat_read_bpb(sb: &mut SuperBlock, b: &BootSector, silent: bool) -> Result<BiosParamBlock> {
+pub fn fat_read_bpb(sb: &mut SuperBlock, b: BootSector, silent: bool) -> Result<BiosParamBlock> {
     let bpb = unsafe {
         BiosParamBlock {
             sector_size: u16::from_le_bytes(ptr::addr_of!(b.sector_size).read_unaligned()),

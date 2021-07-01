@@ -120,20 +120,11 @@ impl FileSystemBase for BS2Fat {
             sb.s_flags |= bindings::SB_NOATIME as u64;
 
             sb.set_min_blocksize(512);
-            let buffer_head = sb
-                .read_block(0)
-                .ok_or_else(|| {
-                    pr_err!("unable to read boot sector");
-                    Fail(Error::EIO)
-                })?
-                .as_mut();
-            let boot_sector = unsafe {
-                buffer_head
-                    .b_data
-                    .cast::<BootSector>()
-                    .as_mut()
-                    .expectk("buffer data was NULL")
-            };
+            let buffer_head = sb.read_block(0).ok_or_else(|| {
+                pr_err!("unable to read boot sector");
+                Fail(Error::EIO)
+            })?;
+            let boot_sector = unsafe { buffer_head.b_data.cast::<BootSector>().read_unaligned() };
             let bpb = fat_read_bpb(sb, boot_sector, silent);
             // niklas: I (for now) chose not to add the floppy disk thingy here :)
             libfs_functions::release_buffer(buffer_head);
@@ -158,7 +149,7 @@ impl FileSystemBase for BS2Fat {
                 }
 
                 if let Some(bh_resize) = sb.read_block(0) {
-                    libfs_functions::release_buffer(bh_resize.as_mut());
+                    libfs_functions::release_buffer(bh_resize);
                 } else {
                     pr_err!(
                         "unable to read boot sector (logical sector size {})",

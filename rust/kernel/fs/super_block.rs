@@ -7,6 +7,7 @@ use core::{
 
 use crate::{
     bindings,
+    buffer_head::BufferHead,
     c_types::*,
     fs::super_operations::{SuperOperations, SuperOperationsVtable},
     Result,
@@ -55,11 +56,8 @@ impl SuperBlock {
     /// The returned buffer should be discarded using `libfs_functions::release_buffer` (otherwise
     /// known as `brelse`).
     #[must_use]
-    pub fn read_block<'this, 'ret>(
-        &'this mut self,
-        block: u64,
-    ) -> Option<&'ret mut bindings::buffer_head> {
-        unsafe { rust_helper_sb_bread(self.as_ptr_mut(), block).as_mut() }
+    pub fn read_block<'this, 'ret>(&'this mut self, block: u64) -> Option<&'ret mut BufferHead> {
+        unsafe { rust_helper_sb_bread(self.as_ptr_mut(), block).as_mut() }.map(AsMut::as_mut)
     }
 }
 
