@@ -74,8 +74,6 @@ impl FileSystemBase for BS2Ramfs {
         _data: Option<&mut Self::MountOptions>,
         _silent: c_int,
     ) -> Result {
-        pr_emerg!("Reached ramfs_fill_super_impl");
-
         sb.s_magic = BS2RAMFS_MAGIC;
         let ops = Bs2RamfsSuperOps::default();
 
@@ -84,14 +82,12 @@ impl FileSystemBase for BS2Ramfs {
         sb.s_root = ramfs_get_inode(sb, None, Mode::S_IFDIR | ops.mount_opts.mode, 0)
             .and_then(Dentry::make_root)
             .ok_or(Error::ENOMEM)? as *mut _ as *mut _;
-        pr_emerg!("(rust) s_root: {:?}", sb.s_root);
 
         sb.set_super_operations(ops)?;
         sb.s_maxbytes = MAX_LFS_FILESIZE;
         sb.s_blocksize = kernel::PAGE_SIZE as _;
         sb.s_blocksize_bits = PAGE_SHIFT as _;
         sb.s_time_gran = 1;
-        pr_emerg!("SB members set");
 
         Ok(())
     }
@@ -100,7 +96,7 @@ kernel::declare_fs_type!(BS2Ramfs, BS2RAMFS_FS_TYPE);
 
 impl KernelModule for BS2Ramfs {
     fn init() -> Result<Self> {
-        pr_emerg!("bs2 ramfs in action");
+        pr_info!("bs2 ramfs in action");
         libfs_functions::register_filesystem::<Self>().map(move |_| Self)
     }
 }
@@ -198,7 +194,7 @@ impl SuperOperations for Bs2RamfsSuperOps {
     }
 
     fn show_options(&self, _s: &mut SeqFile, _root: &mut Dentry) -> Result {
-        pr_emerg!("ramfs show options, doing nothing");
+        // TODO: Do something
         Ok(())
     }
 }
@@ -287,12 +283,10 @@ impl InodeOperations for Bs2RamfsDirInodeOps {
         mode: Mode,
         _excl: bool,
     ) -> Result {
-        pr_emerg!("enter create");
         self.mknod(mnt_userns, dir, dentry, mode | Mode::S_IFREG, 0)
     }
 
     fn lookup(&self, dir: &mut Inode, dentry: &mut Dentry, flags: c_uint) -> Result<*mut Dentry> {
-        pr_emerg!("enter lookup");
         libfs_functions::simple_lookup(dir, dentry, flags) // niklas: This returns 0, but it does so on main too, so it's not the problem
     }
 
@@ -337,9 +331,7 @@ impl InodeOperations for Bs2RamfsDirInodeOps {
         dentry: &mut Dentry,
         mode: Mode,
     ) -> Result {
-        pr_emerg!("enter mkdir");
         if let Err(_) = self.mknod(mnt_userns, dir, dentry, mode | Mode::S_IFDIR, 0) {
-            pr_emerg!("mkdir: inc_nlink");
             dir.inc_nlink();
         }
         Ok(())
