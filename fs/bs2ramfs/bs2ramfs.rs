@@ -313,7 +313,7 @@ impl InodeOperations for Bs2RamfsDirInodeOps {
         symname: &'static CStr,
     ) -> Result {
         let inode = ramfs_get_inode(
-            unsafe { dir.i_sb.as_mut().unwrap().as_mut() },
+            dir.super_block_mut(),
             Some(dir),
             Mode::S_IFLNK | Mode::S_IRWXUGO,
             0,
@@ -358,20 +358,14 @@ impl InodeOperations for Bs2RamfsDirInodeOps {
         mode: Mode,
         dev: Dev,
     ) -> Result {
-        // todo: write some kind of wrapper
-        ramfs_get_inode(
-            unsafe { dir.i_sb.as_mut().unwrap().as_mut() },
-            Some(dir),
-            mode,
-            dev,
-        )
-        .ok_or(Error::ENOSPC)
-        .map(|inode| {
-            dentry.instantiate(inode);
-            dentry.get();
-            dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
-            ()
-        })
+        ramfs_get_inode(dir.super_block_mut(), Some(dir), mode, dev)
+            .ok_or(Error::ENOSPC)
+            .map(|inode| {
+                dentry.instantiate(inode);
+                dentry.get();
+                dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
+                ()
+            })
     }
     fn rename(
         &self,

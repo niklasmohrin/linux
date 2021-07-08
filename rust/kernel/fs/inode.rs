@@ -1,6 +1,8 @@
 use alloc::boxed::Box;
-use core::ops::{Deref, DerefMut};
-use core::{mem, ptr};
+use core::{
+    ops::{Deref, DerefMut},
+    {mem, ptr},
+};
 
 use crate::{
     bindings,
@@ -43,6 +45,24 @@ impl Inode {
 
     pub fn next_ino() -> u32 {
         unsafe { bindings::get_next_ino() } // FIXME: why do the bindings not return c_int here?
+    }
+
+    pub fn super_block<'a, 'b>(&'a self) -> &'b SuperBlock {
+        unsafe {
+            self.i_sb
+                .as_mut()
+                .expectk("Inode had NULL super block")
+                .as_mut()
+        }
+    }
+
+    pub fn super_block_mut<'a, 'b>(&'a mut self) -> &'b mut SuperBlock {
+        unsafe {
+            self.i_sb
+                .as_mut()
+                .expectk("Inode had NULL super block")
+                .as_mut()
+        }
     }
 
     pub fn mapping(&mut self) -> &AddressSpace {
