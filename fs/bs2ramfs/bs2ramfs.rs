@@ -136,8 +136,7 @@ impl FileOperations for Bs2RamfsFileOps {
         fsync,
         splice_read,
         splice_write,
-        seek,
-        get_unmapped_area
+        seek
     );
 
     fn read_iter(&self, iocb: &mut Kiocb, iter: &mut IovIter) -> Result<usize> {
@@ -154,20 +153,6 @@ impl FileOperations for Bs2RamfsFileOps {
 
     fn fsync(&self, file: &File, start: u64, end: u64, datasync: bool) -> Result<u32> {
         libfs_functions::noop_fsync(file, start, end, datasync)
-    }
-
-    fn get_unmapped_area(
-        &self,
-        _file: &File,
-        _addr: u64,
-        _len: u64,
-        _pgoff: u64,
-        _flags: u64,
-    ) -> Result<u64> {
-        pr_emerg!(
-            "AKAHSDkADKHAKHD WE ARE ABOUT TO PANIC (IN MMU_GET_UNMAPPED_AREA;;;; LOOK HERE COME ON"
-        );
-        unimplemented!()
     }
 
     fn seek(&self, file: &File, pos: SeekFrom) -> Result<u64> {
