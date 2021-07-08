@@ -12,7 +12,7 @@ use core::ptr;
 
 use crate::{
     bindings, c_types::*, error::from_kernel_err_ptr, fs::super_block::SuperBlock, print::ExpectK,
-    ret_err_ptr, str::CStr, Result,
+    ret_err_ptr, str::CStr, types::FileSystemFlagsInt, Result,
 };
 
 pub trait BuildVtable<T> {
@@ -36,8 +36,8 @@ pub trait FileSystemBase {
     type MountOptions = c_void;
 
     const NAME: &'static CStr;
-    const FS_FLAGS: c_int;
-    const OWNER: *mut bindings::module;
+    const FS_FLAGS: FileSystemFlagsInt;
+    const OWNER: *mut bindings::module = ptr::null_mut();
 
     fn mount(
         fs_type: &'_ mut FileSystemType,

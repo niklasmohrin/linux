@@ -23,6 +23,29 @@ pub type Kstat = bindings::kstat;
 pub type Dev = bindings::dev_t;
 pub type Page = bindings::page;
 
+pub type FileSystemFlagsInt = c_types::c_int;
+
+pub struct FileSystemFlags;
+
+impl FileSystemFlags {
+    /// Not a virtual file system. An actual underlying block device is required.
+    pub const FS_REQUIRES_DEV: c_types::c_int = bindings::FS_REQUIRES_DEV as _;
+    /// Mount data is binary, and cannot be handled by the standard option parser
+    pub const FS_BINARY_MOUNTDATA: c_types::c_int = bindings::FS_BINARY_MOUNTDATA as _;
+    /// Has subtype
+    pub const FS_HAS_SUBTYPE: c_types::c_int = bindings::FS_HAS_SUBTYPE as _;
+    /// Can be mounted by userns root
+    pub const FS_USERNS_MOUNT: c_types::c_int = bindings::FS_USERNS_MOUNT as _;
+    /// Disable fanotify permission events
+    pub const FS_DISALLOW_NOTIFY_PERM: c_types::c_int = bindings::FS_DISALLOW_NOTIFY_PERM as _;
+    /// FS has been updated to handle vfs idmappings
+    pub const FS_ALLOW_IDMAP: c_types::c_int = bindings::FS_ALLOW_IDMAP as _;
+    /// Remove once all fs converted
+    pub const FS_THP_SUPPORT: c_types::c_int = bindings::FS_THP_SUPPORT as _;
+    /// FS will handle d_move() during rename() internally
+    pub const FS_RENAME_DOES_D_MOVE: c_types::c_int = bindings::FS_RENAME_DOES_D_MOVE as _;
+}
+
 /// Permissions.
 ///
 /// C header: [`include/uapi/linux/stat.h`](../../../../include/uapi/linux/stat.h)
