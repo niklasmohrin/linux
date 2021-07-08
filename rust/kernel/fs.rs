@@ -1,3 +1,4 @@
+pub mod address_space;
 pub mod address_space_operations;
 pub mod dentry;
 pub mod inode;

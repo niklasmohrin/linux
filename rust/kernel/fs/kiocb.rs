@@ -1,8 +1,9 @@
-use core::mem;
-use core::ops::{Deref, DerefMut};
+use core::{
+    mem,
+    ops::{Deref, DerefMut},
+};
 
-use crate::bindings;
-use crate::file::File;
+use crate::{bindings, file::File};
 
 #[repr(transparent)]
 pub struct Kiocb(bindings::kiocb);

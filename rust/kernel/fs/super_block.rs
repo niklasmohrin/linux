@@ -7,6 +7,7 @@ use core::{
 use crate::{
     bindings,
     fs::super_operations::{SuperOperations, SuperOperationsVtable},
+    Result,
 };
 
 #[repr(transparent)]

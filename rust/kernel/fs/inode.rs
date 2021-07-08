@@ -2,10 +2,12 @@ use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut};
 use core::{mem, ptr};
 
-use crate::bindings;
-use crate::fs::super_block::SuperBlock;
-use crate::fs::BuildVtable;
-use crate::types::{Dev, Mode};
+use crate::{
+    bindings,
+    fs::{address_space::AddressSpace, super_block::SuperBlock, BuildVtable},
+    print::ExpectK,
+    types::{Dev, Mode},
+};
 
 #[derive(PartialEq, Eq)]
 pub enum UpdateATime {
@@ -41,6 +43,24 @@ impl Inode {
 
     pub fn next_ino() -> u32 {
         unsafe { bindings::get_next_ino() } // FIXME: why do the bindings not return c_int here?
+    }
+
+    pub fn mapping(&mut self) -> &AddressSpace {
+        unsafe {
+            self.i_mapping
+                .as_mut()
+                .expectk("Inode had NULL mapping")
+                .as_mut()
+        }
+    }
+
+    pub fn mapping_mut(&mut self) -> &mut AddressSpace {
+        unsafe {
+            self.i_mapping
+                .as_mut()
+                .expectk("Inode had NULL mapping")
+                .as_mut()
+        }
     }
 
     pub fn init_owner(
@@ -104,17 +124,6 @@ impl Inode {
         // TODO: Box::try_new
         // => probably shouzldn't allocate in this method anyways, revisit signature
         self.i_private = Box::into_raw(Box::new(ops)).cast();
-    }
-
-    // I think Inode should rather have a method get_address_space, and the AddressSpace should then provide set_address_space_operations
-    pub fn set_address_space_operations<Ops: BuildVtable<bindings::address_space_operations>>(
-        &mut self,
-        ops: Ops,
-    ) {
-        unsafe {
-            (*self.i_mapping).a_ops = Ops::build_vtable();
-            (*self.i_mapping).private_data = Box::into_raw(Box::new(ops)).cast();
-        }
     }
 }
 

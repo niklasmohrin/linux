@@ -7,13 +7,14 @@ use crate::{
     file::File,
     file_operations::SeekFrom,
     fs::{
-        dentry::Dentry, from_kernel_err_ptr, inode::Inode, kiocb::Kiocb, super_block::SuperBlock,
-        super_operations::Kstatfs, DeclaredFileSystemType, FileSystemBase,
+        address_space::AddressSpace, dentry::Dentry, from_kernel_err_ptr, inode::Inode,
+        kiocb::Kiocb, super_block::SuperBlock, super_operations::Kstatfs, DeclaredFileSystemType,
+        FileSystemBase,
     },
     iov_iter::IovIter,
     print::ExpectK,
     str::CStr,
-    types::{AddressSpace, Iattr, Kstat, Page, Path, UserNamespace},
+    types::{Iattr, Kstat, Page, Path, UserNamespace},
     Result,
 };
 
@@ -231,7 +232,7 @@ pub fn simple_write_begin(
     Error::parse_int(unsafe {
         bindings::simple_write_begin(
             file.map(|f| f.ptr).unwrap_or(ptr::null_mut()),
-            mapping as *mut _,
+            mapping.as_ptr_mut(),
             pos,
             len,
             flags,
@@ -254,7 +255,7 @@ pub fn simple_write_end(
     Error::parse_int(unsafe {
         bindings::simple_write_end(
             file.map(|f| f.ptr).unwrap_or(ptr::null_mut()),
-            mapping as *mut _,
+            mapping.as_ptr_mut(),
             pos,
             len,
             copied,

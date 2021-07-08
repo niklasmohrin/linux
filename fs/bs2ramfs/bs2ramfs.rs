@@ -9,6 +9,7 @@ use kernel::{
     file::File,
     file_operations::{FileOperations, SeekFrom},
     fs::{
+        address_space::AddressSpace,
         address_space_operations::AddressSpaceOperations,
         dentry::Dentry,
         inode::{Inode, UpdateATime, UpdateCTime, UpdateMTime},
@@ -21,8 +22,9 @@ use kernel::{
     },
     iov_iter::IovIter,
     prelude::*,
+    print::ExpectK,
     str::CStr,
-    types::{AddressSpace, Dev, Iattr, Kstat, Page, Path, UserNamespace},
+    types::{Dev, Iattr, Kstat, Page, Path, UserNamespace},
     Error, Mode,
 };
 
@@ -409,9 +411,12 @@ pub fn ramfs_get_inode<'a>(
         inode.i_ino = Inode::next_ino() as _;
         inode.init_owner(unsafe { &mut bindings::init_user_ns }, dir, mode);
 
-        inode.set_address_space_operations(Bs2RamfsAOps);
+        inode
+            .mapping_mut()
+            .set_address_space_operations(Bs2RamfsAOps)
+            .expectk("Set address space operations");
 
-        // I think these should be functions on the AddressSpace, i.e. sth like inode.get_address_space().set_gfp_mask(...)
+        // TODO: these should be functions on the AddressSpace
         unsafe {
             rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
             rust_helper_mapping_set_unevictable(inode.i_mapping);

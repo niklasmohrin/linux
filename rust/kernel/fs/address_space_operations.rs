@@ -11,8 +11,9 @@ use crate::{
     error::{Error, Result},
     file::{File, FileRef},
     from_kernel_result,
-    fs::BuildVtable,
-    types::{AddressSpace, Page},
+    fs::{address_space::AddressSpace, BuildVtable},
+    print::ExpectK,
+    types::Page,
 };
 
 /// Corresponds to the kernel's `struct adress_space_operations`.
@@ -87,7 +88,7 @@ unsafe extern "C" fn write_begin_callback<T: AddressSpaceOperations>(
         let a_ops = &*((*mapping).private_data as *const T);
         let file = (!file.is_null()).then(|| FileRef::from_ptr(file));
         from_kernel_result! {
-            a_ops.write_begin(file.as_deref(), &mut (*mapping), pos, len, flags, pagep, fsdata).map(|()| 0)
+            a_ops.write_begin(file.as_deref(), mapping.as_mut().expectk("Got null mapping").as_mut(), pos, len, flags, pagep, fsdata).map(|()| 0)
         }
     }
 }
@@ -105,7 +106,7 @@ unsafe extern "C" fn write_end_callback<T: AddressSpaceOperations>(
         let a_ops = &*((*mapping).private_data as *const T);
         let file = (!file.is_null()).then(|| FileRef::from_ptr(file));
         from_kernel_result! {
-                a_ops.write_end(file.as_deref(), &mut (*mapping), pos, len, copied, &mut (*page), fsdata).map(|x| x as i32)
+            a_ops.write_end(file.as_deref(), mapping.as_mut().expectk("Got null mapping").as_mut(), pos, len, copied, &mut (*page), fsdata).map(|x| x as i32)
         }
     }
 }
