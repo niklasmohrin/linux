@@ -23,28 +23,61 @@ pub type Kstat = bindings::kstat;
 pub type Dev = bindings::dev_t;
 pub type Page = bindings::page;
 
-pub type FileSystemFlagsInt = c_types::c_int;
+macro_rules! impl_flag_methods {
+    ($T:ty, $V:ty) => {
+        impl $T {
+            pub const fn from_int(val: $V) -> Self {
+                Self(val)
+            }
+            pub const fn into_int(self) -> $V {
+                self.0
+            }
+            pub const fn is_empty(self) -> bool {
+                self.0 == 0
+            }
+            pub const fn has(self, other: Self) -> bool {
+                self.0 & other.0 != 0
+            }
+            pub const fn with(self, other: Self) -> Self {
+                Self(self.0 | other.0)
+            }
+            pub const fn without(self, other: Self) -> Self {
+                Self(self.0 & !other.0)
+            }
+        }
+    };
+}
 
-pub struct FileSystemFlags;
+pub struct FileSystemFlags(c_types::c_int);
 
+#[rustfmt::skip]
 impl FileSystemFlags {
     /// Not a virtual file system. An actual underlying block device is required.
-    pub const FS_REQUIRES_DEV: c_types::c_int = bindings::FS_REQUIRES_DEV as _;
+    pub const FS_REQUIRES_DEV: Self         = Self::from_int(bindings::FS_REQUIRES_DEV as _);
+
     /// Mount data is binary, and cannot be handled by the standard option parser
-    pub const FS_BINARY_MOUNTDATA: c_types::c_int = bindings::FS_BINARY_MOUNTDATA as _;
+    pub const FS_BINARY_MOUNTDATA: Self     = Self::from_int(bindings::FS_BINARY_MOUNTDATA as _);
+
     /// Has subtype
-    pub const FS_HAS_SUBTYPE: c_types::c_int = bindings::FS_HAS_SUBTYPE as _;
+    pub const FS_HAS_SUBTYPE: Self          = Self::from_int(bindings::FS_HAS_SUBTYPE as _);
+
     /// Can be mounted by userns root
-    pub const FS_USERNS_MOUNT: c_types::c_int = bindings::FS_USERNS_MOUNT as _;
+    pub const FS_USERNS_MOUNT: Self         = Self::from_int(bindings::FS_USERNS_MOUNT as _);
+
     /// Disable fanotify permission events
-    pub const FS_DISALLOW_NOTIFY_PERM: c_types::c_int = bindings::FS_DISALLOW_NOTIFY_PERM as _;
+    pub const FS_DISALLOW_NOTIFY_PERM: Self = Self::from_int(bindings::FS_DISALLOW_NOTIFY_PERM as _);
+
     /// FS has been updated to handle vfs idmappings
-    pub const FS_ALLOW_IDMAP: c_types::c_int = bindings::FS_ALLOW_IDMAP as _;
+    pub const FS_ALLOW_IDMAP: Self          = Self::from_int(bindings::FS_ALLOW_IDMAP as _);
+
     /// Remove once all fs converted
-    pub const FS_THP_SUPPORT: c_types::c_int = bindings::FS_THP_SUPPORT as _;
+    pub const FS_THP_SUPPORT: Self          = Self::from_int(bindings::FS_THP_SUPPORT as _);
+
     /// FS will handle d_move() during rename() internally
-    pub const FS_RENAME_DOES_D_MOVE: c_types::c_int = bindings::FS_RENAME_DOES_D_MOVE as _;
+    pub const FS_RENAME_DOES_D_MOVE: Self   = Self::from_int(bindings::FS_RENAME_DOES_D_MOVE as _);
 }
+
+impl_flag_methods!(FileSystemFlags, c_types::c_int);
 
 /// Permissions.
 ///

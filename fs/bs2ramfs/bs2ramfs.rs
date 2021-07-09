@@ -24,7 +24,7 @@ use kernel::{
     prelude::*,
     print::ExpectK,
     str::CStr,
-    types::{Dev, FileSystemFlags, FileSystemFlagsInt, Iattr, Kstat, Page, Path, UserNamespace},
+    types::{Dev, FileSystemFlags, Iattr, Kstat, Page, Path, UserNamespace},
     Error, Mode,
 };
 
@@ -53,7 +53,7 @@ struct BS2Ramfs;
 
 impl FileSystemBase for BS2Ramfs {
     const NAME: &'static CStr = kernel::c_str!("bs2ramfs");
-    const FS_FLAGS: FileSystemFlagsInt = FileSystemFlags::FS_USERNS_MOUNT;
+    const FS_FLAGS: FileSystemFlags = FileSystemFlags::FS_USERNS_MOUNT;
 
     fn mount(
         _fs_type: &'_ mut FileSystemType,

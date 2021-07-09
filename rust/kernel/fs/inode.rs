@@ -1,7 +1,8 @@
 use alloc::boxed::Box;
 use core::{
+    mem,
     ops::{Deref, DerefMut},
-    {mem, ptr},
+    ptr,
 };
 
 use crate::{
