@@ -32,7 +32,7 @@ macro_rules! impl_flag_methods {
             pub const fn into_int(self) -> $V {
                 self.0
             }
-            pub const fn is_empty(self) -> bool {
+            pub const fn is_empty(&self) -> bool {
                 self.0 == 0
             }
             pub const fn has(self, other: Self) -> bool {

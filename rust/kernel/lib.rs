@@ -23,10 +23,10 @@
     const_unreachable_unchecked,
     try_reserve
 )]
-#![deny(clippy::complexity)]
-#![deny(clippy::correctness)]
+#![warn(clippy::complexity)]
+#![warn(clippy::correctness)]
 #![deny(clippy::perf)]
-#![deny(clippy::style)]
+#![warn(clippy::style)]
 #![deny(rust_2018_idioms)]
 
 // Ensure conditional compilation based on the kernel configuration works;

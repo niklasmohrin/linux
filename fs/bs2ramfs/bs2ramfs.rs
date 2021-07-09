@@ -1,4 +1,6 @@
 #![no_std]
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
 
 use alloc::boxed::Box;
 use core::{mem, ptr};
@@ -30,7 +32,7 @@ use kernel::{
 
 const PAGE_SHIFT: u32 = 12; // x86 (maybe)
 const MAX_LFS_FILESIZE: c_longlong = c_longlong::MAX;
-const BS2RAMFS_MAGIC: u64 = 0x858458f6; // ~~one less than~~ ramfs, should not clash with anything (maybe)
+const BS2RAMFS_MAGIC: u64 = 0x858458f6;
 
 extern "C" {
     fn rust_helper_mapping_set_unevictable(mapping: *mut bindings::address_space);
@@ -287,7 +289,7 @@ impl InodeOperations for Bs2RamfsDirInodeOps {
     }
 
     fn lookup(&self, dir: &mut Inode, dentry: &mut Dentry, flags: c_uint) -> Result<*mut Dentry> {
-        libfs_functions::simple_lookup(dir, dentry, flags) // niklas: This returns 0, but it does so on main too, so it's not the problem
+        libfs_functions::simple_lookup(dir, dentry, flags)
     }
 
     fn link(&self, old_dentry: &mut Dentry, dir: &mut Inode, dentry: &mut Dentry) -> Result {
@@ -331,7 +333,10 @@ impl InodeOperations for Bs2RamfsDirInodeOps {
         dentry: &mut Dentry,
         mode: Mode,
     ) -> Result {
-        if let Err(_) = self.mknod(mnt_userns, dir, dentry, mode | Mode::S_IFDIR, 0) {
+        if self
+            .mknod(mnt_userns, dir, dentry, mode | Mode::S_IFDIR, 0)
+            .is_err()
+        {
             dir.inc_nlink();
         }
         Ok(())
@@ -349,15 +354,14 @@ impl InodeOperations for Bs2RamfsDirInodeOps {
         mode: Mode,
         dev: Dev,
     ) -> Result {
-        ramfs_get_inode(dir.super_block_mut(), Some(dir), mode, dev)
-            .ok_or(Error::ENOSPC)
-            .map(|inode| {
-                dentry.instantiate(inode);
-                dentry.get();
-                dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
-                ()
-            })
+        let inode =
+            ramfs_get_inode(dir.super_block_mut(), Some(dir), mode, dev).ok_or(Error::ENOSPC)?;
+        dentry.instantiate(inode);
+        dentry.get();
+        dir.update_acm_time(UpdateATime::No, UpdateCTime::Yes, UpdateMTime::Yes);
+        Ok(())
     }
+
     fn rename(
         &self,
         mnt_userns: &mut UserNamespace,
@@ -377,41 +381,40 @@ pub fn ramfs_get_inode<'a>(
     mode: Mode,
     dev: bindings::dev_t,
 ) -> Option<&'a mut Inode> {
-    Inode::new(sb).map(|inode| {
-        inode.i_ino = Inode::next_ino() as _;
-        inode.init_owner(unsafe { &mut bindings::init_user_ns }, dir, mode);
+    let inode = Inode::new(sb)?;
+    inode.i_ino = Inode::next_ino() as _;
+    inode.init_owner(unsafe { &mut bindings::init_user_ns }, dir, mode);
 
-        inode
-            .mapping_mut()
-            .set_address_space_operations(Bs2RamfsAOps)
-            .expectk("Set address space operations");
+    inode
+        .mapping_mut()
+        .set_address_space_operations(Bs2RamfsAOps)
+        .expectk("Set address space operations");
 
-        // TODO: these should be functions on the AddressSpace
-        unsafe {
-            rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
-            rust_helper_mapping_set_unevictable(inode.i_mapping);
+    // TODO: these should be functions on the AddressSpace
+    unsafe {
+        rust_helper_mapping_set_gfp_mask(inode.i_mapping, RUST_HELPER_GFP_HIGHUSER);
+        rust_helper_mapping_set_unevictable(inode.i_mapping);
+    }
+
+    inode.update_acm_time(UpdateATime::Yes, UpdateCTime::Yes, UpdateMTime::Yes);
+    match mode & Mode::S_IFMT {
+        Mode::S_IFREG => {
+            inode.set_inode_operations(Bs2RamfsFileInodeOps);
+            inode.set_file_operations::<Bs2RamfsFileOps>();
         }
-
-        inode.update_acm_time(UpdateATime::Yes, UpdateCTime::Yes, UpdateMTime::Yes);
-        match mode & Mode::S_IFMT {
-            Mode::S_IFREG => {
-                inode.set_inode_operations(Bs2RamfsFileInodeOps);
-                inode.set_file_operations::<Bs2RamfsFileOps>();
-            }
-            Mode::S_IFDIR => {
-                inode.set_inode_operations(Bs2RamfsDirInodeOps);
-                inode.set_file_operations::<SimpleDirOperations>();
-                inode.inc_nlink();
-            }
-            Mode::S_IFLNK => {
-                inode.set_inode_operations(PageSymlinkInodeOperations);
-                inode.nohighmem();
-            }
-            _ => {
-                inode.init_special(mode, dev);
-            }
+        Mode::S_IFDIR => {
+            inode.set_inode_operations(Bs2RamfsDirInodeOps);
+            inode.set_file_operations::<SimpleDirOperations>();
+            inode.inc_nlink();
         }
+        Mode::S_IFLNK => {
+            inode.set_inode_operations(PageSymlinkInodeOperations);
+            inode.nohighmem();
+        }
+        _ => {
+            inode.init_special(mode, dev);
+        }
+    }
 
-        inode
-    })
+    Some(inode)
 }

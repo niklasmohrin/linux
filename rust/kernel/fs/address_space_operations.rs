@@ -209,6 +209,7 @@ macro_rules! declare_address_space_operations {
         const TO_USE: $crate::fs::address_space_operations::ToUse = $crate::fs::address_space_operations::USE_NONE;
     };
     ($($i:ident),+) => {
+        #[allow(clippy::needless_update)]
         const TO_USE: kernel::fs::address_space_operations::ToUse =
             $crate::fs::address_space_operations::ToUse {
                 $($i: true),+ ,

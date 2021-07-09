@@ -475,6 +475,7 @@ macro_rules! declare_inode_operations {
         const TO_USE: $crate::fs::inode_operations::ToUse = $crate::fs::inode_operations::USE_NONE;
     };
     ($($i:ident),+) => {
+        #[allow(clippy::needless_update)]
         const TO_USE: kernel::fs::inode_operations::ToUse =
             $crate::fs::inode_operations::ToUse {
                 $($i: true),+ ,

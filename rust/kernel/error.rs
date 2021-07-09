@@ -335,6 +335,7 @@ where
 #[macro_export]
 macro_rules! from_kernel_result {
     ($($tt:tt)*) => {{
+        #[allow(clippy::redundant_closure_call)]
         $crate::error::from_kernel_result_helper((|| {
             $($tt)*
         })())

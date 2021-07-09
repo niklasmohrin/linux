@@ -524,6 +524,7 @@ macro_rules! declare_super_operations {
         const TO_USE: $crate::fs::super_operations::ToUse = $crate::fs::super_operations::USE_NONE;
     };
     ($($i:ident),+) => {
+        #[allow(clippy::needless_update)]
         const TO_USE: kernel::fs::super_operations::ToUse =
             $crate::fs::super_operations::ToUse {
                 $($i: true),+ ,
