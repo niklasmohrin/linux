@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(global_asm)]
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
 
