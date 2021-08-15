@@ -1,20 +1,44 @@
-use crate::{bindings, fs::object_wrapper::ObjectWrapper};
+use core::mem;
+use core::ops::{Deref, DerefMut};
+
+use crate::bindings;
+use crate::fs::inode::Inode;
+
+extern "C" {
+    fn rust_helper_dget(dentry: *mut bindings::dentry);
+}
 
 #[repr(transparent)]
-struct Dentry(bindings::dentry);
+pub struct Dentry(bindings::dentry);
 
-unsafe impl ObjectWrapper for Dentry {
-    type Wrapped = bindings::dentry;
-    fn inner(&self) -> &Self::Wrapped {
-        42.into::<*mut u8>();
+impl Deref for Dentry {
+    type Target = bindings::dentry;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
-    fn inner_mut(&mut self) -> &mut Self::Wrapped {
+}
+impl DerefMut for Dentry {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+impl AsRef<Dentry> for bindings::dentry {
+    fn as_ref(&self) -> &Dentry {
+        unsafe { mem::transmute(self) }
+    }
+}
+impl AsMut<Dentry> for bindings::dentry {
+    fn as_mut(&mut self) -> &mut Dentry {
+        unsafe { mem::transmute(self) }
     }
 }
 
 impl Dentry {
+    pub fn as_ptr_mut(&mut self) -> *mut bindings::dentry {
+        self.deref_mut() as *mut _
+    }
+
     pub fn make_root(inode: &mut Inode) -> Option<&mut Self> {
         unsafe { (bindings::d_make_root(inode.as_ptr_mut()) as *mut Self).as_mut() }
     }

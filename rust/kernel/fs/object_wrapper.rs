@@ -1,3 +1,7 @@
+// this doesn't really work, but let's keep it around for now
+
+#![cfg(feature = "broken-object-wrapper")]
+
 use core::{
     mem,
     ops::{Deref, DerefMut},
