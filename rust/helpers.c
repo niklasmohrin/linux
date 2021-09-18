@@ -174,6 +174,12 @@ long rust_helper_PTR_ERR(__force const void *ptr)
 }
 EXPORT_SYMBOL_GPL(rust_helper_PTR_ERR);
 
+void *rust_helper_ERR_PTR(long err)
+{
+	return ERR_PTR(err);
+}
+EXPORT_SYMBOL_GPL(rust_helper_ERR_PTR);
+
 const char *rust_helper_errname(int err)
 {
 	return errname(err);
@@ -277,6 +283,12 @@ void *rust_helper_dev_get_drvdata(struct device *dev)
 	return dev_get_drvdata(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_get_drvdata);
+
+void rust_helper_dget(struct dentry *dentry)
+{
+	dget(dentry);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dget);
 
 /* We use bindgen's --size_t-is-usize option to bind the C size_t type
  * as the Rust usize type, so we can use it in contexts where Rust

@@ -1,4 +1,4 @@
-use crate::{bindings, fs::BuildVtable, Result};
+use crate::{bindings, /*fs::BuildVtable,*/ Result};
 use alloc::boxed::Box;
 use core::{
     mem,
@@ -36,12 +36,12 @@ impl AddressSpace {
         self.deref_mut() as *mut _
     }
 
-    pub fn set_address_space_operations<Ops: BuildVtable<bindings::address_space_operations>>(
-        &mut self,
-        ops: Ops,
-    ) -> Result {
-        self.a_ops = Ops::build_vtable();
-        self.private_data = Box::into_raw(Box::try_new(ops)?).cast();
-        Ok(())
-    }
+    // pub fn set_address_space_operations<Ops: BuildVtable<bindings::address_space_operations>>(
+    //     &mut self,
+    //     ops: Ops,
+    // ) -> Result {
+    //     self.a_ops = Ops::build_vtable();
+    //     self.private_data = Box::into_raw(Box::try_new(ops)?).cast();
+    //     Ok(())
+    // }
 }

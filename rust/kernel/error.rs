@@ -7,8 +7,8 @@
 use crate::str::CStr;
 use crate::{bindings, c_types};
 use alloc::{alloc::AllocError, collections::TryReserveError};
-use core::convert::From;
-use core::fmt;
+use core::convert::{From, TryInto};
+use core::fmt::{self, Debug};
 use core::num::TryFromIntError;
 use core::str::{self, Utf8Error};
 
@@ -347,6 +347,20 @@ impl Error {
     pub fn to_kernel_errno(self) -> c_types::c_int {
         self.0
     }
+
+    pub fn parse_int<T>(value: T) -> Result<T>
+    where
+        T: TryInto<c_types::c_int> + Copy,
+        <T as TryInto<c_types::c_int>>::Error: Debug,
+    {
+        match value
+            .try_into()
+            .expect("Couldn't convert value given to Error::parse_int into c_int")
+        {
+            e if e.is_negative() => Err(Error::from_kernel_errno(e)),
+            _ => Ok(value),
+        }
+    }
 }
 
 impl fmt::Debug for Error {
@@ -457,7 +471,7 @@ where
 #[macro_export]
 macro_rules! from_kernel_result {
     ($($tt:tt)*) => {{
-        $crate::error::from_kernel_result_helper((|| {
+        $crate::error::from_kernel_result_helper(#[allow(clippy::redundant_closure_call)](|| {
             $($tt)*
         })())
     }};
@@ -490,8 +504,6 @@ macro_rules! from_kernel_result {
 ///     }
 /// }
 /// ```
-// TODO: remove `dead_code` marker once an in-kernel client is available.
-#[allow(dead_code)]
 pub(crate) fn from_kernel_err_ptr<T>(ptr: *mut T) -> Result<*mut T> {
     // CAST: casting a pointer to `*const c_types::c_void` is always valid.
     let const_ptr: *const c_types::c_void = ptr.cast();
@@ -511,4 +523,18 @@ pub(crate) fn from_kernel_err_ptr<T>(ptr: *mut T) -> Result<*mut T> {
         return Err(unsafe { Error::from_kernel_errno_unchecked(err as i32) });
     }
     Ok(ptr)
+}
+
+pub trait KernelResultExt {
+    type Output = c_types::c_void;
+
+    fn into_ok_err_ptr(self) -> *mut Self::Output;
+}
+
+impl<T> KernelResultExt for Result<*mut T> {
+    type Output = T;
+
+    fn into_ok_err_ptr(self) -> *mut Self::Output {
+        self.unwrap_or_else(|err| unsafe { bindings::ERR_PTR(err.to_kernel_errno().into()) }.cast())
+    }
 }

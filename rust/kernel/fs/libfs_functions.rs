@@ -3,16 +3,14 @@ use core::ptr;
 use crate::{
     bindings,
     c_types::*,
-    error::Error,
+    error::{from_kernel_err_ptr, Error},
     file::File,
     file_operations::SeekFrom,
     fs::{
-        address_space::AddressSpace, dentry::Dentry, from_kernel_err_ptr, inode::Inode,
-        kiocb::Kiocb, super_block::SuperBlock, super_operations::Kstatfs, DeclaredFileSystemType,
-        FileSystemBase,
+        address_space::AddressSpace, dentry::Dentry, inode::Inode, kiocb::Kiocb,
+        super_block::SuperBlock, DeclaredFileSystemType, FileSystemBase,
     },
     iov_iter::IovIter,
-    print::ExpectK,
     str::CStr,
     types::{Iattr, Kstat, Page, Path, UserNamespace},
     Result,
@@ -78,10 +76,10 @@ pub fn generic_delete_inode(inode: &mut Inode) -> Result {
     Error::parse_int(unsafe { bindings::generic_delete_inode(inode.as_ptr_mut()) }).map(|_| ())
 }
 
-pub fn simple_statfs(root: &mut Dentry, buf: &mut Kstatfs) -> Result {
-    Error::parse_int(unsafe { bindings::simple_statfs(root.as_ptr_mut(), buf as *mut _) })
-        .map(|_| ())
-}
+// pub fn simple_statfs(root: &mut Dentry, buf: &mut Kstatfs) -> Result {
+//     Error::parse_int(unsafe { bindings::simple_statfs(root.as_ptr_mut(), buf as *mut _) })
+//         .map(|_| ())
+// }
 
 pub fn simple_setattr(
     mnt_userns: &mut UserNamespace,
@@ -202,7 +200,7 @@ unsafe extern "C" fn fill_super_callback<T: FileSystemBase>(
     silent: c_int,
 ) -> c_int {
     unsafe {
-        let sb = sb.as_mut().expectk("SuperBlock was null").as_mut();
+        let sb = sb.as_mut().expect("SuperBlock was null").as_mut();
         let data = (data as *mut T::MountOptions).as_mut();
         T::fill_super(sb, data, silent)
             .map(|_| 0)
@@ -216,9 +214,9 @@ pub fn kill_litter_super(sb: &mut SuperBlock) {
     }
 }
 
-pub fn simple_readpage(file: &File, page: &mut Page) -> Result {
-    Error::parse_int(unsafe { bindings::simple_readpage(file.ptr, page as *mut _) }).map(|_| ())
-}
+// pub fn simple_readpage(file: &File, page: &mut Page) -> Result {
+//     Error::parse_int(unsafe { bindings::simple_readpage(file.ptr, page as *mut _) }).map(|_| ())
+// }
 
 pub fn simple_write_begin(
     file: Option<&File>,
@@ -243,41 +241,45 @@ pub fn simple_write_begin(
     .map(|_| ())
 }
 
-pub fn simple_write_end(
-    file: Option<&File>,
-    mapping: &mut AddressSpace,
-    pos: bindings::loff_t,
-    len: u32,
-    copied: u32,
-    page: &mut Page,
-    fsdata: *mut c_void,
-) -> Result<u32> {
-    Error::parse_int(unsafe {
-        bindings::simple_write_end(
-            file.map(|f| f.ptr).unwrap_or(ptr::null_mut()),
-            mapping.as_ptr_mut(),
-            pos,
-            len,
-            copied,
-            page,
-            fsdata,
-        )
-    })
-    .map(|x| x as u32)
-}
+// TODO: these have been marked private in c1e3dbe9818e3caa4e467255a348df56912ca549, probably just
+// need some wrappers; maybe we can even cut some of this code out by doing what kernel does rn
 
-pub fn __set_page_dirty_nobuffers(page: &mut Page) -> Result<bool> {
-    Error::parse_int(unsafe { bindings::__set_page_dirty_nobuffers(page as *mut _) })
-        .map(|x| x != 0)
-}
+// pub fn simple_write_end(
+//     file: Option<&File>,
+//     mapping: &mut AddressSpace,
+//     pos: bindings::loff_t,
+//     len: u32,
+//     copied: u32,
+//     page: &mut Page,
+//     fsdata: *mut c_void,
+// ) -> Result<u32> {
+//     Error::parse_int(unsafe {
+//         bindings::simple_write_end(
+//             file.map(|f| f.ptr).unwrap_or(ptr::null_mut()),
+//             mapping.as_ptr_mut(),
+//             pos,
+//             len,
+//             copied,
+//             page,
+//             fsdata,
+//         )
+//     })
+//     .map(|x| x as u32)
+// }
 
-crate::declare_c_vtable!(
-    SimpleDirOperations,
-    bindings::file_operations,
-    bindings::simple_dir_operations,
-);
-crate::declare_c_vtable!(
-    PageSymlinkInodeOperations,
-    bindings::inode_operations,
-    bindings::page_symlink_inode_operations,
-);
+// pub fn __set_page_dirty_nobuffers(page: &mut Page) -> Result<bool> {
+//     Error::parse_int(unsafe { bindings::__set_page_dirty_nobuffers(page as *mut _) })
+//         .map(|x| x != 0)
+// }
+
+// TODO: uncomment when this stuff is implemented again
+// crate::declare_c_vtable!(
+//     SimpleDirOperations,
+//     bindings::file_operations,
+//     bindings::simple_dir_operations,
+// );
+// crate::declare_c_vtable!(
+//     PageSymlinkInodeOperations,
+//     bindings::inode_operations,
+//     bindings::page_symlink_inode_operations,
+// );

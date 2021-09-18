@@ -79,6 +79,16 @@ pub enum SeekFrom {
     Current(i64),
 }
 
+impl SeekFrom {
+    pub fn into_pos_and_whence(self) -> (i64, u32) {
+        match self {
+            SeekFrom::Start(off) => (off as _, bindings::SEEK_SET),
+            SeekFrom::End(off) => (off, bindings::SEEK_END),
+            SeekFrom::Current(off) => (off, bindings::SEEK_CUR),
+        }
+    }
+}
+
 /// Called by the VFS when an inode should be opened.
 ///
 /// Calls `T::open` on the returned value of `A::convert`.

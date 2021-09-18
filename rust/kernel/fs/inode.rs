@@ -7,8 +7,7 @@ use core::{
 
 use crate::{
     bindings,
-    fs::{address_space::AddressSpace, super_block::SuperBlock, BuildVtable},
-    print::ExpectK,
+    fs::{address_space::AddressSpace, super_block::SuperBlock /*, BuildVtable*/},
     types::{Dev, Mode},
 };
 
@@ -52,7 +51,7 @@ impl Inode {
         unsafe {
             self.i_sb
                 .as_mut()
-                .expectk("Inode had NULL super block")
+                .expect("Inode had NULL super block")
                 .as_mut()
         }
     }
@@ -61,7 +60,7 @@ impl Inode {
         unsafe {
             self.i_sb
                 .as_mut()
-                .expectk("Inode had NULL super block")
+                .expect("Inode had NULL super block")
                 .as_mut()
         }
     }
@@ -70,7 +69,7 @@ impl Inode {
         unsafe {
             self.i_mapping
                 .as_mut()
-                .expectk("Inode had NULL mapping")
+                .expect("Inode had NULL mapping")
                 .as_mut()
         }
     }
@@ -79,7 +78,7 @@ impl Inode {
         unsafe {
             self.i_mapping
                 .as_mut()
-                .expectk("Inode had NULL mapping")
+                .expect("Inode had NULL mapping")
                 .as_mut()
         }
     }
@@ -136,16 +135,16 @@ impl Inode {
         }
     }
 
-    pub fn set_file_operations<V: BuildVtable<bindings::file_operations>>(&mut self) {
-        self.__bindgen_anon_3.i_fop = V::build_vtable();
-    }
+    // pub fn set_file_operations<V: BuildVtable<bindings::file_operations>>(&mut self) {
+    //     self.__bindgen_anon_3.i_fop = V::build_vtable();
+    // }
 
-    pub fn set_inode_operations<Ops: BuildVtable<bindings::inode_operations>>(&mut self, ops: Ops) {
-        self.i_op = Ops::build_vtable();
-        // TODO: Box::try_new
-        // => probably shouzldn't allocate in this method anyways, revisit signature
-        self.i_private = Box::into_raw(Box::new(ops)).cast();
-    }
+    // pub fn set_inode_operations<Ops: BuildVtable<bindings::inode_operations>>(&mut self, ops: Ops) {
+    //     self.i_op = Ops::build_vtable();
+    //     // TODO: Box::try_new
+    //     // => probably shouzldn't allocate in this method anyways, revisit signature
+    //     self.i_private = Box::into_raw(Box::new(ops)).cast();
+    // }
 }
 
 impl Deref for Inode {
