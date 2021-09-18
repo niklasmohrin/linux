@@ -1,4 +1,4 @@
-use crate::{bindings, /*fs::BuildVtable,*/ Result};
+use crate::{bindings, Result};
 use alloc::boxed::Box;
 use core::{
     mem,

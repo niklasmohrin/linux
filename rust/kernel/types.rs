@@ -17,7 +17,6 @@ pub type Path = bindings::path;
 pub type Kstat = bindings::kstat;
 pub type Dev = bindings::dev_t;
 pub type Page = bindings::page;
-pub type AddressSpace = bindings::address_space;
 
 macro_rules! impl_flag_methods {
     ($T:ty, $V:ty) => {
@@ -45,6 +44,7 @@ macro_rules! impl_flag_methods {
 }
 
 pub struct FileSystemFlags(c_types::c_int);
+impl_flag_methods!(FileSystemFlags, c_types::c_int);
 
 #[rustfmt::skip]
 impl FileSystemFlags {
@@ -72,8 +72,6 @@ impl FileSystemFlags {
     /// FS will handle d_move() during rename() internally
     pub const FS_RENAME_DOES_D_MOVE: Self   = Self::from_int(bindings::FS_RENAME_DOES_D_MOVE as _);
 }
-
-impl_flag_methods!(FileSystemFlags, c_types::c_int);
 
 /// Permissions.
 ///

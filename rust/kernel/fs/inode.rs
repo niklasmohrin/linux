@@ -7,7 +7,7 @@ use core::{
 
 use crate::{
     bindings,
-    fs::{address_space::AddressSpace, super_block::SuperBlock /*, BuildVtable*/},
+    fs::{address_space::AddressSpace, super_block::SuperBlock},
     types::{Dev, Mode},
 };
 
