@@ -528,13 +528,13 @@ pub(crate) fn from_kernel_err_ptr<T>(ptr: *mut T) -> Result<*mut T> {
 pub trait KernelResultExt {
     type Output = c_types::c_void;
 
-    fn into_ok_err_ptr(self) -> *mut Self::Output;
+    fn unwrap_or_err_ptr(self) -> *mut Self::Output;
 }
 
 impl<T> KernelResultExt for Result<*mut T> {
     type Output = T;
 
-    fn into_ok_err_ptr(self) -> *mut Self::Output {
+    fn unwrap_or_err_ptr(self) -> *mut Self::Output {
         self.unwrap_or_else(|err| unsafe { bindings::ERR_PTR(err.to_kernel_errno().into()) }.cast())
     }
 }

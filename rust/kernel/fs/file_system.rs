@@ -83,7 +83,7 @@ pub unsafe extern "C" fn mount_callback<T: FileSystemBase>(
         let fs_type = &mut *fs_type;
         let device_name = CStr::from_char_ptr(device_name);
         let data = (data as *mut T::MountOptions).as_mut();
-        T::mount(fs_type, flags, device_name, data).into_ok_err_ptr()
+        T::mount(fs_type, flags, device_name, data).unwrap_or_err_ptr()
     }
 }
 
