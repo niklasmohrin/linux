@@ -1,10 +1,9 @@
-use alloc::boxed::Box;
 use core::{
     mem,
     ops::{Deref, DerefMut},
 };
 
-use crate::{bindings, Result};
+use crate::bindings;
 
 #[repr(transparent)]
 pub struct SuperBlock(bindings::super_block);

@@ -1,5 +1,4 @@
-use crate::{bindings, Result};
-use alloc::boxed::Box;
+use crate::bindings;
 use core::{
     mem,
     ops::{Deref, DerefMut},

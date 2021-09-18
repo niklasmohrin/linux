@@ -1,3 +1,6 @@
+// FIXME
+#![allow(missing_docs)]
+
 pub mod address_space;
 pub mod dentry;
 pub mod inode;
