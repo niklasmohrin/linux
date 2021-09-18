@@ -48,6 +48,7 @@ pub mod chrdev;
 mod error;
 pub mod file;
 pub mod file_operations;
+pub mod fs;
 pub mod miscdev;
 pub mod pages;
 pub mod power;
@@ -86,7 +87,7 @@ pub mod user_ptr;
 pub use build_error::build_error;
 
 pub use crate::error::{Error, Result};
-pub use crate::types::{Mode, ScopeGuard};
+pub use crate::types::{FileSystemFlags, Mode, ScopeGuard};
 
 /// Page size defined in terms of the `PAGE_SHIFT` macro from C.
 ///

@@ -284,6 +284,12 @@ void *rust_helper_dev_get_drvdata(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_get_drvdata);
 
+void rust_helper_dget(struct dentry *dentry)
+{
+	dget(dentry);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dget);
+
 /* We use bindgen's --size_t-is-usize option to bind the C size_t type
  * as the Rust usize type, so we can use it in contexts where Rust
  * expects a usize like slice (array) indices. usize is defined to be
