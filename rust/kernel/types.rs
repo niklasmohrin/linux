@@ -79,15 +79,16 @@ impl FileSystemFlags {
 ///
 /// C header: [`include/linux/stat.h`](../../../../include/linux/stat.h)
 pub struct Mode(bindings::umode_t);
+pub type ModeInt = u16;
 
 impl Mode {
     /// Creates a [`Mode`] from an integer.
-    pub fn from_int(m: u16) -> Mode {
+    pub fn from_int(m: ModeInt) -> Mode {
         Mode(m)
     }
 
     /// Returns the mode as an integer.
-    pub fn as_int(&self) -> u16 {
+    pub fn as_int(&self) -> ModeInt {
         self.0
     }
 }
