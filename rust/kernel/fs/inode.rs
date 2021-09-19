@@ -4,10 +4,13 @@ use core::{
     ptr,
 };
 
+use alloc::boxed::Box;
+
 use crate::{
     bindings,
-    fs::{address_space::AddressSpace, super_block::SuperBlock},
+    fs::{address_space::AddressSpace, super_block::SuperBlock, BuildVtable},
     types::{Dev, Mode},
+    Result,
 };
 
 #[derive(PartialEq, Eq)]
@@ -134,16 +137,18 @@ impl Inode {
         }
     }
 
-    // pub fn set_file_operations<V: BuildVtable<bindings::file_operations>>(&mut self) {
-    //     self.__bindgen_anon_3.i_fop = V::build_vtable();
-    // }
+    pub fn set_file_operations<Ops: BuildVtable<bindings::file_operations>>(&mut self) {
+        self.__bindgen_anon_3.i_fop = Ops::build_vtable();
+    }
 
-    // pub fn set_inode_operations<Ops: BuildVtable<bindings::inode_operations>>(&mut self, ops: Ops) {
-    //     self.i_op = Ops::build_vtable();
-    //     // TODO: Box::try_new
-    //     // => probably shouzldn't allocate in this method anyways, revisit signature
-    //     self.i_private = Box::into_raw(Box::new(ops)).cast();
-    // }
+    pub fn set_inode_operations<Ops: BuildVtable<bindings::inode_operations>>(
+        &mut self,
+        ops: Ops,
+    ) -> Result {
+        self.i_op = Ops::build_vtable();
+        self.i_private = Box::into_raw(Box::try_new(ops)?).cast();
+        Ok(())
+    }
 }
 
 impl Deref for Inode {

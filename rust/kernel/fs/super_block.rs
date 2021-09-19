@@ -3,7 +3,9 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use crate::bindings;
+use alloc::boxed::Box;
+
+use crate::{bindings, fs::BuildVtable, Result};
 
 #[repr(transparent)]
 pub struct SuperBlock(bindings::super_block);
@@ -13,11 +15,14 @@ impl SuperBlock {
         self.deref_mut() as *mut _
     }
 
-    // pub fn set_super_operations<OPS: SuperOperations>(&mut self, ops: OPS) -> Result {
-    //     self.s_op = unsafe { SuperOperationsVtable::<OPS>::build() };
-    //     self.s_fs_info = Box::into_raw(Box::try_new(ops)?).cast();
-    //     Ok(())
-    // }
+    pub fn set_super_operations<Ops: BuildVtable<bindings::super_operations>>(
+        &mut self,
+        ops: Ops,
+    ) -> Result {
+        self.s_op = Ops::build_vtable();
+        self.s_fs_info = Box::into_raw(Box::try_new(ops)?).cast();
+        Ok(())
+    }
 }
 
 impl Deref for SuperBlock {
