@@ -32,19 +32,6 @@ pub fn generic_file_mmap(file: &File, vma: &mut bindings::vm_area_struct) -> Res
     Error::parse_int(unsafe { bindings::generic_file_mmap(file.ptr, vma as *mut _) }).map(|_| ())
 }
 
-pub fn noop_fsync(file: &File, start: u64, end: u64, datasync: bool) -> Result<u32> {
-    let start = start as _;
-    let end = end as _;
-    let datasync = if datasync { 1 } else { 0 };
-    let res = unsafe { bindings::noop_fsync(file.ptr, start, end, datasync) };
-    if res == 0 {
-        Ok(0)
-    } else {
-        Err(Error::EINVAL)
-        // Err(Error::from_kernel_errno(bindings::errno))
-    }
-}
-
 pub fn generic_file_llseek(file: &File, pos: SeekFrom) -> Result<u64> {
     let (offset, whence) = pos.into_pos_and_whence();
     Error::parse_int(
@@ -276,14 +263,13 @@ pub fn simple_write_begin(
 //         .map(|x| x != 0)
 // }
 
-// TODO: uncomment when this stuff is implemented again
-// crate::declare_c_vtable!(
-//     SimpleDirOperations,
-//     bindings::file_operations,
-//     bindings::simple_dir_operations,
-// );
-// crate::declare_c_vtable!(
-//     PageSymlinkInodeOperations,
-//     bindings::inode_operations,
-//     bindings::page_symlink_inode_operations,
-// );
+crate::declare_c_vtable!(
+    SimpleDirOperations,
+    bindings::file_operations,
+    bindings::simple_dir_operations,
+);
+crate::declare_c_vtable!(
+    PageSymlinkInodeOperations,
+    bindings::inode_operations,
+    bindings::page_symlink_inode_operations,
+);

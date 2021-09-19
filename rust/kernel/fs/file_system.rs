@@ -38,14 +38,14 @@ pub trait DeclaredFileSystemType: FileSystemBase {
 macro_rules! declare_fs_type {
     ($T:ty, $S:ident) => {
         static mut $S: $crate::bindings::file_system_type = $crate::bindings::file_system_type {
-            name: <$T as $crate::fs::FileSystemBase>::NAME.as_char_ptr() as *const _,
-            fs_flags: <$T as $crate::fs::FileSystemBase>::FS_FLAGS.into_int(),
-            owner: <$T as $crate::fs::FileSystemBase>::OWNER,
-            mount: Some($crate::fs::mount_callback::<$T>),
-            kill_sb: Some($crate::fs::kill_superblock_callback::<$T>),
-            ..$crate::fs::DEFAULT_FS_TYPE
+            name: <$T as $crate::fs::file_system::FileSystemBase>::NAME.as_char_ptr() as *const _,
+            fs_flags: <$T as $crate::fs::file_system::FileSystemBase>::FS_FLAGS.into_int(),
+            owner: <$T as $crate::fs::file_system::FileSystemBase>::OWNER,
+            mount: Some($crate::fs::file_system::mount_callback::<$T>),
+            kill_sb: Some($crate::fs::file_system::kill_superblock_callback::<$T>),
+            ..$crate::fs::file_system::DEFAULT_FS_TYPE
         };
-        impl $crate::fs::DeclaredFileSystemType for $T {
+        impl $crate::fs::file_system::DeclaredFileSystemType for $T {
             fn file_system_type() -> *mut $crate::bindings::file_system_type {
                 unsafe { &mut $S as *mut _ }
             }
