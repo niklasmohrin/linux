@@ -1,8 +1,13 @@
 use core::ptr;
+use core::marker::PhantomData;
+use core::pin::Pin;
+use core::str::from_utf8;
+
+use alloc::boxed::Box;
 
 use crate::{
     bindings, c_types::*, error::KernelResultExt, fs::super_block::SuperBlock, str::CStr,
-    types::FileSystemFlags, Result,
+    types::FileSystemFlags, Result, pr_warn, Error
 };
 
 pub type FileSystemType = bindings::file_system_type;
@@ -99,3 +104,56 @@ pub const DEFAULT_FS_TYPE: bindings::file_system_type = bindings::file_system_ty
     i_mutex_key: bindings::lock_class_key {},
     i_mutex_dir_key: bindings::lock_class_key {},
 };
+
+pub struct Registration<T: FileSystemBase> {
+    phantom: PhantomData<T>,
+    fs_type: FileSystemType,
+}
+
+//Pin self
+impl<T: FileSystemBase> Registration<T> {
+    fn new(fs_type: FileSystemType ) -> Self {
+        Self {
+            phantom: PhantomData,
+            fs_type: fs_type,
+        }
+    }
+
+    pub fn new_pinned() -> Result<Pin<Box<Self>>> {
+        let mut c_fs_type = FileSystemType::default(); // may use DEFAULT_FS_TYPE?
+        c_fs_type.mount = Some(mount_callback::<T>);
+        c_fs_type.kill_sb = Some(kill_superblock_callback::<T>);
+        c_fs_type.owner = T::OWNER;
+        c_fs_type.name = T::NAME.as_char_ptr();
+        c_fs_type.fs_flags = T::FS_FLAGS.into_int();
+
+        Ok(Pin::from(Box::try_new(Self::new(c_fs_type))?))
+    }
+
+    pub fn register(&mut self) -> Result {
+        let err = unsafe { bindings::register_filesystem(&mut self.fs_type) };
+        if err != 0 {
+            return Err(Error::from_kernel_errno(err));
+        }
+
+        Ok(())
+    }
+
+    fn unregister(&mut self) -> Result {
+        let err = unsafe { bindings::unregister_filesystem(&mut self.fs_type) };
+        if err != 0 {
+            return Err(Error::from_kernel_errno(err));
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: FileSystemBase> Drop for Registration<T> {
+    fn drop(&mut self) {
+        if let Err(_) = self.unregister() {
+            let fs_name = from_utf8(T::NAME.as_bytes()).unwrap();
+            pr_warn!("Unregister filesystem {} failed", fs_name);
+        }
+    }
+}
